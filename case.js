@@ -1393,7 +1393,7 @@ case 'buatcatatan': {
     const res = await axios.post(`${global.apiGroq}/openai/v1/chat/completions`, {
       model: 'llama-3.3-70b-versatile',
       messages: [{ role: 'user', content: text }]
-    }, { headers: { Authorization: `Bearer ${global.groqKey}` } })
+    }, { headers: { Authorization: `Bearer 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` } })
     const hasil = res.data.choices[0].message.content
 
     if (!fs.existsSync('./Tmp')) fs.mkdirSync('./Tmp', { recursive: true })
@@ -1418,7 +1418,7 @@ case "gemini": {
   if (!text) return reply(`contoh .${command} halo`)
 
   const { GoogleGenAI } = require("@google/genai")
-  const apikey = global.geminiapi
+  const apikey = "AIzaSyC-bHKyLeYQVt1LG2frmHOoVr2cF5yfe8s"
   const ai = new GoogleGenAI({ apiKey: apikey })
 
   const web = await ai.models.generateContent({
