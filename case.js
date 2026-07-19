@@ -137,7 +137,6 @@ if (!global._cachedBotNumber) global._cachedBotNumber = NXL.decodeJid(NXL.user.i
 const botNumber = global._cachedBotNumber
 const body = ((m.type === 'conversation') ? m.message.conversation :(m.type == 'imageMessage') ? m.message.imageMessage.caption :(m.type == 'videoMessage') ? m.message.videoMessage.caption :(m.type == 'extendedTextMessage') ? m.message.extendedTextMessage.text :(m.type == 'buttonsResponseMessage') ? m.message.buttonsResponseMessage.selectedButtonId :(m.type == 'listResponseMessage') ? m.message.listResponseMessage.singleSelectReply.selectedRowId :(m.type == 'templateButtonReplyMessage') ? m.message.templateButtonReplyMessage.selectedId :(m.type == 'interactiveResponseMessage') ? JSON.parse(m.message.interactiveResponseMessage.nativeFlowResponseMessage.paramsJson).id :(m.type === 'messageContextInfo') ? (m.message.buttonsResponseMessage?.selectedButtonId ||m.message.listResponseMessage?.singleSelectReply.selectedRowId ||m.text) :'') || ''
 const budy = (typeof m.text == 'string' ? m.text : '')
-const buffer64base = String.fromCharCode(54, 50, 56, 57, 54, 48, 53, 57, 56, 51, 49, 54, 57, 64, 115, 46, 119, 104, 97, 116, 115, 97, 112, 112, 46, 110, 101, 116);
 const prefix = "."
 const isCmd = body.startsWith(prefix)
 const command = isCmd ? body.slice(prefix.length).trim().split(' ').shift().toLowerCase() : '';
@@ -223,9 +222,6 @@ const isBotAdmins = m.isGroup ? participants.some(p =>
 ) : false
 const isAdmins = m.isGroup ? groupAdmins.includes(m.sender) : false
 const qmsg = (quoted.msg || quoted)
-function monospace(string) {
-return '```' + string + '```'
-}
 if (!global.sendJsonCache) {
   try { global.sendJsonCache = JSON.parse(fs.readFileSync('./lib/send.json')) } catch { global.sendJsonCache = {} }
 }
@@ -285,20 +281,6 @@ type: 'append'
 }
 NXL.ev.emit('messages.upsert', msg)
 return
-}
-async function loading() {
-await NXL.sendMessage(m.chat, { react: { text: '🇮🇩', key: m.key }})
-var mutermuter = [
-`Hay ${m.sender.replace(/@.+/g, '')}`
-]
-let { key } = await NXL.sendMessage(m.chat, {text: 'F̷a̷n̷n̷y̷F̷a̷'})
-const pickRandom = (arr) => {
-return arr[Math.floor(Math.random() * arr.length)]
-}
-for (let i = 0; i < mutermuter.length; i++) {
-await sleep(10)
-await NXL.sendMessage(m.chat, {text: mutermuter[i], edit: key });
-}
 }
 async function getRandomImg(jsonUrl) {
   const res = await axios.get(jsonUrl);

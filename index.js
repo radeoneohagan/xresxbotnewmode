@@ -1,14 +1,11 @@
 require('./settings');
 const fs = require('fs');
 const pino = require('pino');
-const path = require('path');
-const axios = require('axios');
 const chalk = require('chalk');
 const readline = require('readline');
 const fetch = require('node-fetch');
 const FileType = require('file-type');
 const { exec } = require('child_process');
-const { say } = require('cfonts')
 const { Boom } = require('@hapi/boom');
 const { imageToWebp, imageToWebp2, imageToWebp3, videoToWebp, writeExifImg, writeExifImgAV, writeExifVid } = require("./lib/media/sticker.js");
 
