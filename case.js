@@ -17,6 +17,29 @@ function safeWriteJSON(filePath, data) {
   }
 }
 
+// [AUDIT-FIX] Pembaca JSON hot-path dengan cache berbasis mtime.
+// Menghindari fs.readFileSync + JSON.parse berulang pada SETIAP pesan grup
+// (antiswgc.json & warndata.json) tanpa mengubah perilaku: selalu mencerminkan
+// isi file terbaru karena re-parse hanya dilakukan bila mtime file berubah
+// (mis. setelah safeWriteJSON dari command terkait).
+// PENTING: hanya untuk pemakaian READ-ONLY — jangan memutasi objek yang dikembalikan.
+const _hotJsonCache = {}
+const _hotJsonMtime = {}
+function readHotJson(filePath, fallback) {
+  try {
+    const mt = fs.statSync(filePath).mtimeMs
+    if (_hotJsonMtime[filePath] === mt && (filePath in _hotJsonCache)) {
+      return _hotJsonCache[filePath]
+    }
+    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'))
+    _hotJsonMtime[filePath] = mt
+    _hotJsonCache[filePath] = parsed
+    return parsed
+  } catch {
+    return fallback
+  }
+}
+
 // ============================================================================
 // [PATCH B] UNIFIED BROADCAST ENGINE (root cause RC-3)
 // ----------------------------------------------------------------------------
@@ -339,8 +362,8 @@ let user = [m.sender]
 if (m.isGroup && !m.key.fromMe && !isCreator && !isAdmins) {
   try {
     const _warnPath = './database/warndata.json'
-    let _warnData = {}
-    try { _warnData = JSON.parse(fs.readFileSync(_warnPath, 'utf8')) } catch { _warnData = {} }
+    // [AUDIT-FIX] cache mtime (read-only) — hindari parse tiap pesan grup
+    const _warnData = readHotJson(_warnPath, {})
 
     const _groupData = _warnData?.[from] || {}
 
@@ -526,8 +549,9 @@ async function groupStatus(jid, content) {
   return m;
 }
 
-if (m.isGroup && fs.existsSync('./database/antiswgc.json')) {
-    const antiswgcList = JSON.parse(fs.readFileSync('./database/antiswgc.json', 'utf8'))
+if (m.isGroup) {
+    // [AUDIT-FIX] cache mtime (read-only) — hindari parse tiap pesan grup
+    const antiswgcList = readHotJson('./database/antiswgc.json', [])
 
     if (antiswgcList.includes(m.chat)) {
 
@@ -976,11 +1000,9 @@ if (!isCmd && hasContent && !m.key.fromMe && global.db?.users?.[m.sender]?.NXL !
 
 if (m.isGroup && !m.key.fromMe && !isAdmins && !isCreator && isBotAdmins) {
   try {
-    let warnData = {}
-    try {
-      const raw = JSON.parse(fs.readFileSync('./database/warndata.json', 'utf8'))
-      warnData = Array.isArray(raw) ? {} : raw
-    } catch { warnData = {} }
+    // [AUDIT-FIX] cache mtime (read-only) — hindari parse kedua tiap pesan grup
+    const _rawWarn = readHotJson('./database/warndata.json', {})
+    const warnData = Array.isArray(_rawWarn) ? {} : _rawWarn
     if ((warnData[from]?.[m.sender] || 0) > 0) {
       await NXL.sendMessage(from, { delete: m.key })
       return
