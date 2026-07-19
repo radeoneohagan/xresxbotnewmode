@@ -2550,13 +2550,31 @@ case "add": {
   let users = m?.quoted ? m?.quoted.sender : text.replace(/[^0-9]/g, '') + '@s.whatsapp.net'
 
   try {
-    await NXL.groupParticipantsUpdate(m.chat, [users], 'add')
-    return NXL.sendMessage(m.chat, {
-      text: `Berhasil menambahkan @${users.split('@')[0]}`,
-      mentions: [users]
-    }, { quoted: m })
+    const result = await NXL.groupParticipantsUpdate(m.chat, [users], 'add')
+    // [AUDIT-FIX] Cek response actual dari WA — groupParticipantsUpdate mengembalikan
+    // array status per-participant. Hanya reply sukses jika WA benar-benar menambahkan.
+    const status = result?.[0]?.status || result?.[0]?.content?.toString() || ''
+    const statusCode = typeof status === 'number' ? status : parseInt(status) || 0
+
+    if (statusCode === 200 || status === '200' || (typeof status === 'string' && /success/i.test(status))) {
+      return NXL.sendMessage(m.chat, {
+        text: `✅ Berhasil menambahkan @${users.split('@')[0]}`,
+        mentions: [users]
+      }, { quoted: m })
+    } else if (statusCode === 403 || status === '403') {
+      return m.reply(`❌ Gagal menambahkan @${users.split('@')[0]}: Pengaturan privasi nomor tersebut tidak mengizinkan ditambahkan ke grup.`)
+    } else if (statusCode === 408 || status === '408') {
+      return NXL.sendMessage(m.chat, {
+        text: `⏳ Undangan terkirim ke @${users.split('@')[0]} (perlu persetujuan)`,
+        mentions: [users]
+      }, { quoted: m })
+    } else if (statusCode === 409 || status === '409') {
+      return m.reply(`⚠️ @${users.split('@')[0]} sudah ada di grup ini.`)
+    } else {
+      return m.reply(`⚠️ Gagal menambahkan: respons WA — ${JSON.stringify(status)}`)
+    }
   } catch (e) {
-    return m.reply("Gagal add: " + e.message)
+    return m.reply("❌ Gagal add: " + (e?.message || e))
   }
 }
 break
@@ -4376,8 +4394,8 @@ case 'song': {
   try {
     await console.log("mencari")
 
-    const { data } = await axios.get(`https://api.ikyyxd.my.id/search/ytplayv2?q=${encodeURIComponent(text)}`)
-    if (!data.status) return console.log('[-] Hasil pencarian kosong atau lagu tidak ditemukan')
+    const { data } = await axios.get(`https://api.ikyyxd.my.id/search/ytplayv2?q=${encodeURIComponent(text)}`, { timeout: 20000 })
+    if (!data.status) return m.reply('❌ Hasil pencarian kosong atau lagu tidak ditemukan')
 
     const res = data.result
     
