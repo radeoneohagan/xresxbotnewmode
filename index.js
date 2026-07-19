@@ -7,7 +7,14 @@ const fetch = require('node-fetch');
 const FileType = require('file-type');
 const { exec } = require('child_process');
 const { Boom } = require('@hapi/boom');
-const { imageToWebp, imageToWebp2, imageToWebp3, videoToWebp, writeExifImg, writeExifImgAV, writeExifVid } = require("./lib/media/sticker.js");
+// [PERF] Sticker helpers di-lazy-load: hanya dimuat saat benar-benar dipakai
+// (NXL.sendImageAsSticker/AV/Avatar/Video). Menghemat ~400-700ms startup karena
+// memuat fluent-ffmpeg + @ffmpeg-installer + node-webpmux yang berat.
+let _stickerLib = null
+function _requireSticker() {
+  if (!_stickerLib) _stickerLib = require("./lib/media/sticker.js")
+  return _stickerLib
+}
 
 const { default: WAConnection, generateWAMessageFromContent,
 prepareWAMessageMedia, useMultiFileAuthState, Browsers, DisconnectReason, makeInMemoryStore, makeCacheableSignalKeyStore, fetchLatestWaWebVersion, proto, PHONENUMBER_MCC, getAggregateVotesInPollMessage, downloadContentFromMessage } = require('@whiskeysockets/baileys');
@@ -237,17 +244,25 @@ async function startingBot() {
 	const myEpoch = _connEpoch
 
 	const store = makeInMemoryStore({ logger: pino().child({ level: 'silent', stream: 'store' }) })
-	const { state, saveCreds } = await useMultiFileAuthState('./session')
 
+	// [PERF] Paralel: fetch WA version (network) + load auth state (disk I/O) bersamaan.
+	// Sebelumnya sequential (~200-5200ms total), kini overlap (~maks(version,auth)).
 	let version = [2, 3000, 1035194821]
-	try {
-		const res = await Promise.race([
-			fetch('https://raw.githubusercontent.com/WhiskeySockets/Baileys/master/src/Defaults/baileys-version.json'),
-			new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000))
-		])
-		const json = await res.json()
-		if (Array.isArray(json.version)) version = json.version
-	} catch {  }
+	const [_versionResult, { state, saveCreds }] = await Promise.all([
+		(async () => {
+			try {
+				const res = await Promise.race([
+					fetch('https://raw.githubusercontent.com/WhiskeySockets/Baileys/master/src/Defaults/baileys-version.json'),
+					new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000))
+				])
+				const json = await res.json()
+				if (Array.isArray(json.version)) return json.version
+			} catch {}
+			return null
+		})(),
+		useMultiFileAuthState('./session')
+	])
+	if (_versionResult) version = _versionResult
 
 	const NXL = WAConnection({
 		version,
@@ -567,6 +582,7 @@ await NXL.relayMessage(id, {
 });
 
 NXL.sendImageAsSticker = async (jid, path, quoted, options = {}) => {
+const { imageToWebp, writeExifImg } = _requireSticker()
 let buff = Buffer.isBuffer(path) ? path : /^data:.*?\/.*?;base64,/i.test(path) ? Buffer.from(path.split`,`[1], 'base64') : /^https?:\/\//.test(path) ? await (await getBuffer(path)) : fs.existsSync(path) ? fs.readFileSync(path) : Buffer.alloc(0)
 let buffer
 if (options && (options.packname || options.author)) {
@@ -577,6 +593,7 @@ await NXL.sendMessage(jid, { sticker: { url: buffer }, ...options }, { quoted })
 return buffer}
 
 NXL.sendImageAsStickerAV = async (jid, path, quoted, options = {}) => {
+const { imageToWebp2, writeExifImgAV } = _requireSticker()
 let buff = Buffer.isBuffer(path) ? path : /^data:.*?\/.*?;base64,/i.test(path) ? Buffer.from(path.split`,`[1], 'base64') : /^https?:\/\//.test(path) ? await (await getBuffer(path)) : fs.existsSync(path) ? fs.readFileSync(path) : Buffer.alloc(0)
 let buffer
 if (options && (options.packname || options.author)) {
@@ -587,6 +604,7 @@ await NXL.sendMessage(jid, { sticker: { url: buffer }, ...options }, { quoted })
 return buffer}
 
 NXL.sendImageAsStickerAvatar = async (jid, path, quoted, options = {}) => {
+const { imageToWebp3, writeExifImg } = _requireSticker()
 let buff = Buffer.isBuffer(path) ? path : /^data:.*?\/.*?;base64,/i.test(path) ? Buffer.from(path.split`,`[1], 'base64') : /^https?:\/\//.test(path) ? await (await getBuffer(path)) : fs.existsSync(path) ? fs.readFileSync(path) : Buffer.alloc(0)
 let buffer
 if (options && (options.packname || options.author)) {
@@ -597,6 +615,7 @@ await NXL.sendMessage(jid, { sticker: { url: buffer }, ...options }, { quoted })
 return buffer}
 
 NXL.sendVideoAsSticker = async (jid, path, quoted, options = {}) => {
+const { videoToWebp, writeExifVid } = _requireSticker()
 let buff = Buffer.isBuffer(path) ? path : /^data:.*?\/.*?;base64,/i.test(path) ? Buffer.from(path.split`,`[1], 'base64') : /^https?:\/\//.test(path) ? await (await getBuffer(path)) : fs.existsSync(path) ? fs.readFileSync(path) : Buffer.alloc(0)
 let buffer
 if (options && (options.packname || options.author)) {
