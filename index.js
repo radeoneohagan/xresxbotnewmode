@@ -77,8 +77,24 @@ let _reconnectDelay = 3000
 let _reconnectTimer = null
 let _isConnecting = false
 
+// [PATCH A] Connection epoch — identitas unik tiap instance socket.
+// Setiap kali koneksi lama dibuang, epoch dinaikkan sehingga seluruh
+// event handler milik socket lama otomatis menjadi "stale" (no-op).
+// Ini menghilangkan cross-talk antar socket saat reconnect (root cause RC-1/T2-07).
+let _connEpoch = 0
+
 let _lastActivityAt = Date.now()
 let _connectingSince = null
+
+// [PATCH A] Status koneksi aktif. true hanya setelah 'open', false saat 'close'/dispose.
+// Dipakai oleh callback berumur panjang (autopromo, game, broadcast) untuk
+// memastikan tidak mengirim melalui socket yang sudah mati (root cause RC-2).
+global._connAlive = false
+
+// [PATCH A] Accessor tunggal socket-hidup. Mengembalikan socket HANYA jika koneksi
+// benar-benar terbuka. Semua konsumen berumur panjang WAJIB memakai ini,
+// bukan menyimpan referensi socket dari closure.
+global.getLiveConn = () => (global._connAlive && global._nxlConn) ? global._nxlConn : null
 
 function markActivity() {
 	_lastActivityAt = Date.now()
@@ -139,6 +155,66 @@ async function getGroupsCached(conn) {
 	return groups
 }
 
+// [PATCH A] Hentikan seluruh SIDE-EFFECT yang terikat pada satu sesi koneksi.
+// Dipanggil segera saat 'close' agar timer/interval/broadcast tidak terus
+// bekerja memakai socket yang sudah mati selama jeda reconnect.
+// Idempotent: aman dipanggil berkali-kali.
+function stopConnectionScopedWork() {
+	// Tandai koneksi tidak aktif lebih dulu supaya getLiveConn() langsung null.
+	global._connAlive = false
+
+	// Sinyal stop untuk seluruh broadcast loop (jpm, swgc, pushkontak).
+	// stoppush sebelumnya TIDAK pernah di-set saat disconnect (root cause T2-12).
+	global.stopjpm = true
+	global.stopswgc = true
+	global.stoppush = true
+
+	// Bersihkan timer readiness (connection-scoped).
+	try { if (global._botReadyTimer) { clearTimeout(global._botReadyTimer); global._botReadyTimer = null } } catch {}
+
+	// Hentikan interval autopromo (root cause T2-03).
+	try { if (global.intervalPromo) { clearInterval(global.intervalPromo); global.intervalPromo = null } } catch {}
+
+	// Bersihkan seluruh timeout sesi game (root cause T2-04).
+	try {
+		if (global._gameSessions && typeof global._gameSessions === 'object') {
+			for (const chatId of Object.keys(global._gameSessions)) {
+				const gs = global._gameSessions[chatId]
+				try { if (gs && gs.timeout) clearTimeout(gs.timeout) } catch {}
+				delete global._gameSessions[chatId]
+			}
+		}
+	} catch {}
+}
+
+// [PATCH A] Buang instance koneksi lama secara menyeluruh SEBELUM membangun yang baru.
+// Menaikkan epoch (mematikan handler lama), menghentikan side-effect, menutup
+// websocket lama, dan melepas referensi global agar GC dapat mengklaim
+// socket + store lama (root cause RC-1: memory leak, listener yatim, socket hantu).
+// Idempotent & aman untuk panggilan pertama (belum ada koneksi).
+function disposeConnectionScope(reason = '') {
+	// Naikkan epoch: seluruh handler socket lama seketika menjadi stale/no-op.
+	_connEpoch++
+
+	stopConnectionScopedWork()
+
+	const oldConn = global._nxlConn
+	const oldStore = global.store
+
+	if (oldConn) {
+		try {
+			if (typeof oldConn.end === 'function') oldConn.end(undefined)
+			else if (oldConn.ws && typeof oldConn.ws.close === 'function') oldConn.ws.close()
+		} catch {}
+	}
+
+	// Lepas referensi eksternal agar cycle socket-ev-listener dan store-ev dapat di-GC.
+	if (global._nxlConn === oldConn) global._nxlConn = null
+	if (global.store === oldStore) global.store = null
+
+	if (reason) console.log(chalk.gray(`[LIFECYCLE] Dispose koneksi lama (epoch ${_connEpoch}): ${reason}`))
+}
+
 function scheduleReconnect(label = '') {
 	if (_isConnecting) return
 	if (_reconnectTimer) clearTimeout(_reconnectTimer)
@@ -156,6 +232,12 @@ async function startingBot() {
 	_isConnecting = true
 	_connectingSince = Date.now()
 	markActivity()
+
+	// [PATCH A] Buang koneksi lama SEBELUM membangun yang baru.
+	// Ini juga menaikkan epoch, sehingga socket yang akan dibuat di bawah
+	// mendapat identitas baru (myEpoch) dan handler socket lama menjadi stale.
+	disposeConnectionScope('startingBot: membangun sesi baru')
+	const myEpoch = _connEpoch
 
 	const store = makeInMemoryStore({ logger: pino().child({ level: 'silent', stream: 'store' }) })
 	const { state, saveCreds } = await useMultiFileAuthState('./session')
@@ -222,6 +304,10 @@ NXL.ev.on('creds.update', saveCreds)
   
   
 NXL.ev.on('connection.update', async (update) => {
+		// [PATCH A] Abaikan event dari socket lama (epoch tidak cocok).
+		// Mencegah socket yang sudah dibuang mereset _isConnecting / menjadwalkan
+		// reconnect untuk socket baru (root cause T2-07).
+		if (myEpoch !== _connEpoch) return
 		markActivity()
 		const { connection, lastDisconnect, receivedPendingNotifications } = update
 
@@ -232,8 +318,10 @@ NXL.ev.on('connection.update', async (update) => {
 			const err = lastDisconnect?.error
 			const reason = new Boom(err)?.output?.statusCode
 
-			global.stopjpm = true
-			global.stopswgc = true
+			// [PATCH A] Hentikan seluruh side-effect connection-scoped seketika
+			// (flags broadcast, autopromo interval, game timeout, botReady timer,
+			//  tandai koneksi tidak aktif) agar tidak bekerja memakai socket mati.
+			stopConnectionScopedWork()
 
 			if (reason === DisconnectReason.loggedOut) {
 				console.log(chalk.red('[LOGOUT] Sesi habis. Hapus folder session/ dan scan ulang.'))
@@ -263,8 +351,13 @@ NXL.ev.on('connection.update', async (update) => {
 			_isConnecting = false
 			_connectingSince = null
 			markActivity()
+
+			// [PATCH A] Koneksi resmi aktif — getLiveConn() mulai mengembalikan socket ini.
+			global._connAlive = true
+
 			global.stopjpm = false
 			global.stopswgc = false
+			global.stoppush = false
 
 			global.botReady = false
 
@@ -324,6 +417,9 @@ try {
 await Solving(NXL, store)
 
 NXL.ev.on('messages.upsert', async (message) => {
+  // [PATCH A] Abaikan pesan dari socket lama (epoch mismatch) agar tidak
+  // terjadi double-processing / double-execute command (root cause RC-1).
+  if (myEpoch !== _connEpoch) return
   markActivity()
   // [FIX H1] Antilink processing dipindahkan sepenuhnya ke case.js
   // untuk menghindari double-processing (duplicate delete/kick/warning)
@@ -700,8 +796,16 @@ return NXL
 startingBot()
 
 setInterval(() => {
-	// [FIX H3] Clear seluruh set saat melebihi threshold
-	if (global._processedMsgIds && global._processedMsgIds.size > 300) global._processedMsgIds.clear()
+	// [PATCH C] FIFO eviction (bukan clear-all) & threshold konsisten dengan case.js (500/400).
+	// clear-all bisa menghapus ID pesan aktif -> celah double-execute (T2-08/F1-01).
+	if (global._processedMsgIds && global._processedMsgIds.size > 500) {
+		const _rm = global._processedMsgIds.size - 400
+		let _i = 0
+		for (const _old of global._processedMsgIds) {
+			if (_i++ >= _rm) break
+			global._processedMsgIds.delete(_old)
+		}
+	}
 	if (global.groupCacheTime) {
 		const now = Date.now()
 		const TTL = (global.GROUP_CACHE_TTL || 300000) * 2

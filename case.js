@@ -16,6 +16,86 @@ function safeWriteJSON(filePath, data) {
     try { fs.writeFileSync(filePath, JSON.stringify(data, null, 2)) } catch {}
   }
 }
+
+// ============================================================================
+// [PATCH B] UNIFIED BROADCAST ENGINE (root cause RC-3)
+// ----------------------------------------------------------------------------
+// Satu jalur tunggal untuk seluruh fan-out (jpm, swgc, pushkontak, sendstatus).
+// Menyatukan concern lintas-command yang selama ini diduplikasi & tidak konsisten:
+//   1. LOCK  : akuisisi atomik (check-then-set sinkron) + rilis via finally
+//              -> mencegah broadcast konkuren (F5-02) & lock nyangkut (T2-11/T2-12)
+//   2. STOP  : cek flag stop tiap iterasi -> .stopjpm/.stopswgc/.stoppush bekerja
+//              & loop berhenti saat disconnect (index.js set flag=true) (T2-05/T2-16)
+//   3. SOCKET: cek socket hidup tiap iterasi via global.getLiveConn() (RC-2)
+//              -> tidak pernah mengirim melalui socket mati pasca-reconnect
+//   4. DELAY : jeda antar target (number atau function utk delay acak anti-ban)
+//   5. CLEANUP: dijamin lewat finally (hapus temp file) walau terjadi exception
+//
+// Payload spesifik tiap command tetap berada di callback `sendOne(conn,target,i)`
+// sehingga feature-parity (mentions, vcard ganda, relay groupStatus, dst) terjaga.
+//
+// Return: { rejected, sukses, gagal, index, total, stopped }
+// ============================================================================
+async function runBroadcast(opts) {
+  const {
+    lockFlag = null,
+    stopFlag = null,
+    targets = [],
+    delayMs = 5000,
+    sendOne,
+    onFirstSuccess = null,
+    cleanup = null,
+  } = opts || {}
+
+  // --- 1. Akuisisi lock secara atomik (sinkron, tanpa await di antara) ---
+  if (lockFlag && global[lockFlag]) {
+    if (typeof cleanup === 'function') { try { cleanup() } catch {} }
+    return { rejected: true, sukses: 0, gagal: 0, index: 0, total: targets.length, stopped: false }
+  }
+  if (lockFlag) global[lockFlag] = true
+  if (stopFlag) global[stopFlag] = false
+
+  let sukses = 0, gagal = 0, index = 0, stopped = false, firstDone = false
+
+  try {
+    for (let i = 0; i < targets.length; i++) {
+      // --- 2. Stop-check (flag dari command .stop* atau dari disconnect) ---
+      if (stopFlag && global[stopFlag]) { stopped = true; break }
+      // --- 3. Socket-liveness: berhenti bila koneksi mati/reconnect ---
+      if (!global._connAlive) { stopped = true; break }
+      const conn = (typeof global.getLiveConn === 'function') ? global.getLiveConn() : null
+      if (!conn) { stopped = true; break }
+
+      index++
+      try {
+        await sendOne(conn, targets[i], index)
+        sukses++
+        if (!firstDone && typeof onFirstSuccess === 'function') {
+          firstDone = true
+          try { await onFirstSuccess(conn) } catch {}
+        }
+      } catch (e) {
+        gagal++
+      }
+
+      // --- 4. Delay antar target (kecuali target terakhir / sedang berhenti) ---
+      const more = i < targets.length - 1
+      const stillGoing = !(stopFlag && global[stopFlag]) && global._connAlive
+      if (more && stillGoing) {
+        const _d = (typeof delayMs === 'function') ? delayMs() : delayMs
+        await new Promise(r => setTimeout(r, _d))
+      }
+    }
+  } finally {
+    // --- 1b. Rilis lock apa pun yang terjadi (fix lock-nyangkut) ---
+    if (lockFlag) { try { delete global[lockFlag] } catch { try { global[lockFlag] = false } catch {} } }
+    if (stopFlag) { try { global[stopFlag] = false } catch {} }
+    // --- 5. Cleanup dijamin ---
+    if (typeof cleanup === 'function') { try { cleanup() } catch {} }
+  }
+
+  return { rejected: false, sukses, gagal, index, total: targets.length, stopped }
+}
 const yts = require('yt-search');
 const ytdl = require('@vreden/youtube_scraper');
 const axios = require('axios')
@@ -328,7 +408,10 @@ const getPPorangnya = async () => {
   return await reSize(pp, 300, 300)
 }
 const reply = (teks) => {
-NXL.sendMessage(from, { text : teks }, {quoted:m})
+// [PATCH E] F1-02: kembalikan promise (awaitable), pakai socket hidup, dan .catch
+// agar kegagalan kirim (mis. saat socket mati) tidak menjadi unhandled rejection.
+const _c = (typeof global.getLiveConn === 'function' && global.getLiveConn()) || NXL
+return _c.sendMessage(from, { text : teks }, {quoted:m}).catch(() => {})
 }
 const qtext = {key: {remoteJid: "status@broadcast", participant: "0@s.whatsapp.net"}, message: {"extendedTextMessage": {"text": `Powered By ${ownername}`}}}
 const FakeChannel = {
@@ -433,10 +516,12 @@ function msToDate(ms) {
   }
 
 async function groupStatus(jid, content) {
+  // [PATCH B] Pakai socket hidup agar tidak relay via socket mati saat reconnect.
+  const _conn = (typeof global.getLiveConn === 'function' && global.getLiveConn()) || NXL
   const { backgroundColor } = content;
   delete content.backgroundColor;
   const inside = await baileys.generateWAMessageContent(content, {
-    upload: NXL.waUploadToServer,
+    upload: _conn.waUploadToServer,
     backgroundColor
   });
   const messageSecret = crypto.randomBytes(32);
@@ -453,7 +538,7 @@ async function groupStatus(jid, content) {
       }
     }
   }, {});
-  await NXL.relayMessage(jid, m.message, {
+  await _conn.relayMessage(jid, m.message, {
     messageId: m.key.id
   });
   return m;
@@ -585,9 +670,18 @@ const _msgId = m.key?.id || ''
 if (_msgId) {
   if (global._processedMsgIds.has(_msgId)) return
   global._processedMsgIds.add(_msgId)
-  // [FIX H3] Konsisten threshold, clear seluruh Set saat melebihi batas
+  // [PATCH C] FIFO eviction — hapus ID TERLAMA, bukan clear-all.
+  // clear-all bisa menghapus ID pesan yang BARU saja ditambahkan (termasuk yang
+  // sedang diproses), sehingga redelivery/re-emit dengan ID sama lolos dedup dan
+  // menyebabkan double-execute (root cause F1-01/T2-08). Set menjaga urutan insert,
+  // jadi menghapus dari depan = membuang yang paling lama, ID baru tetap terjaga.
   if (global._processedMsgIds.size > 500) {
-    global._processedMsgIds.clear()
+    const _removeCount = global._processedMsgIds.size - 400
+    let _i = 0
+    for (const _oldId of global._processedMsgIds) {
+      if (_i++ >= _removeCount) break
+      global._processedMsgIds.delete(_oldId)
+    }
   }
 }
 
@@ -613,10 +707,15 @@ if (!isCmd && global.autoJoinGc && budy && budy.includes('chat.whatsapp.com/')) 
       }
 
       for (const link of linksFound) {
+        // [PATCH A] Pakai socket hidup saat eksekusi, bukan closure lama.
+        // Jika koneksi mati (reconnect di tengah proses), hentikan IIFE detached
+        // ini agar tidak memanggil groupAcceptInvite pada socket mati (root cause RC-2/T2-06).
+        const _conn = global.getLiveConn ? global.getLiveConn() : NXL
+        if (!_conn) break
         const code = link.split('chat.whatsapp.com/')[1]?.split('?')[0]?.trim()
         if (!code) continue
         try {
-          await NXL.groupAcceptInvite(code)
+          await _conn.groupAcceptInvite(code)
         } catch (err) {
 
         }
@@ -631,7 +730,7 @@ if (!isCmd && hasContent && !m.key.fromMe && global.db?.users?.[m.sender]?.NXL !
     const GROQ_KEY = global.groqKey
 
     const SESSION_PATH = './database/sessionai.json'
-    if (!fs.existsSync(SESSION_PATH)) fs.writeFileSync(SESSION_PATH, JSON.stringify({}))
+    if (!fs.existsSync(SESSION_PATH)) safeWriteJSON(SESSION_PATH, {})
     let sessionDb = JSON.parse(fs.readFileSync(SESSION_PATH, 'utf8'))
     if (!sessionDb[m.sender]) {
       sessionDb[m.sender] = {
@@ -848,7 +947,18 @@ if (!isCmd && hasContent && !m.key.fromMe && global.db?.users?.[m.sender]?.NXL !
     activeSession.history.push({ role: 'assistant', content: response })
     if (activeSession.history.length > 20) activeSession.history = activeSession.history.slice(-20)
     sessionDb[m.sender].sessions[activeSessionId] = activeSession
-    fs.writeFileSync(SESSION_PATH, JSON.stringify(sessionDb, null, 2))
+    // [PATCH E] Re-read file TERBARU lalu merge HANYA key user ini sebelum tulis atomik.
+    // Mencegah lost-update saat 2+ user memakai AI bersamaan (root cause F3-01):
+    // tiap invokasi hanya menimpa entri miliknya, bukan seluruh snapshot basi.
+    try {
+      let _latestSession = {}
+      try { _latestSession = JSON.parse(fs.readFileSync(SESSION_PATH, 'utf8')) } catch { _latestSession = {} }
+      if (!_latestSession || typeof _latestSession !== 'object') _latestSession = {}
+      _latestSession[m.sender] = sessionDb[m.sender]
+      safeWriteJSON(SESSION_PATH, _latestSession)
+    } catch {
+      safeWriteJSON(SESSION_PATH, sessionDb)
+    }
 
     if (mintaFile) {
       if (!fs.existsSync('./Tmp')) fs.mkdirSync('./Tmp', { recursive: true })
@@ -939,29 +1049,11 @@ if (m.isGroup && !m.key.fromMe && !isAdmins && !isCreator) {
   } catch {}
 }
 
-if (m.isGroup && welcome.includes(from)) {
-  try {
-    const action = m.message?.groupParticipantsMessage?.action ||
-                   m.message?.protocolMessage?.editedMessage?.groupParticipantsMessage?.action
-    const addedMembers = m.message?.groupParticipantsMessage?.participants ||
-                         m.message?.protocolMessage?.editedMessage?.groupParticipantsMessage?.participants
-    if (action === 'add' && addedMembers && addedMembers.length > 0) {
-      for (const newMember of addedMembers) {
-        let pp = null
-        try { pp = await NXL.profilePictureUrl(newMember, 'image') } catch {}
-        const welcomeText = `👋 *Selamat Datang!*\n\n` +
-          `Halo @${newMember.split('@')[0]}!\n` +
-          `Selamat bergabung di grup *${groupName}* 🎉\n\n` +
-          `Semoga betah dan patuhi peraturan grup ya! 😊`
-        if (pp) {
-          await NXL.sendMessage(from, { image: { url: pp }, caption: welcomeText, mentions: [newMember] })
-        } else {
-          await NXL.sendMessage(from, { text: welcomeText, mentions: [newMember] })
-        }
-      }
-    }
-  } catch {}
-}
+// [PATCH C] Welcome DIPINDAH ke sumber tunggal: handler 'group-participants.update'
+// di index.js (event kanonik WhatsApp untuk add/remove/promote/demote).
+// Blok welcome di sini sebelumnya menyebabkan welcome terkirim GANDA karena
+// menangani groupParticipantsMessage yang datang bersamaan dengan event tsb
+// (root cause RC-6/F1-05). Dihapus agar setiap member yang join tepat 1x welcome.
 
 
 if (m.isGroup && !m.key.fromMe && antitoxicList.includes(m.chat) && body) {
@@ -1007,12 +1099,16 @@ if (m.isGroup && !m.key.fromMe && antibotList.includes(m.chat)) {
         isBotDetected = true
       }
 
-      if (targetId.startsWith('3EB0')) {
-        reasons.push('Terdeteksi ID WhatsApp Web (3EB0)')
-        isBotDetected = true
-      }
+      // [PATCH D] Prefix '3EB0' TIDAK lagi dianggap bot (root cause RC-7/F1-04).
+      // Realita protokol WhatsApp: '3EB0' dipakai oleh pengguna WhatsApp Web/Desktop
+      // yang SAH sekaligus sebagian bot Baileys — tidak bisa dibedakan dari prefix.
+      // Menandainya sebagai bot meng-kick 100% pengguna WA Web (merusak grup & memicu
+      // risiko ban). Trade-off diterima: sebagian bot ber-ID 3EB0 mungkin lolos, namun
+      // itu jauh lebih aman daripada menendang anggota manusia yang sah.
 
       if (targetId.startsWith('BAE5')) {
+        // 'BAE5' spesifik untuk client Baileys lama & TIDAK dipakai WhatsApp Web,
+        // sehingga tetap menjadi sinyal bot yang aman.
         reasons.push('Terdeteksi ID Baileys Lama (BAE5)')
         isBotDetected = true
       }
@@ -1036,11 +1132,24 @@ if (m.isGroup && !m.key.fromMe && antibotList.includes(m.chat)) {
 
         try { await NXL.sendMessage(m.chat, { delete: m.key }) } catch {}
 
-        if (actionType === 'kick' && isBotAdmins) {
-          await sleep(2000)
-          try { await NXL.groupParticipantsUpdate(m.chat, [m.sender], 'remove') } catch {}
-        } else if (actionType === 'kick' && !isBotAdmins) {
-          await NXL.sendMessage(m.chat, { text: '⚠️ Bot bukan admin, tidak bisa melakukan kick.' })
+        if (actionType === 'kick') {
+          // [PATCH D] Verifikasi status admin bot dgn metadata SEGAR sebelum kick,
+          // supaya keputusan destruktif tidak memakai cache basi (root cause F4-02).
+          // Hanya berjalan di jalur kick (jarang) sehingga tidak membanjiri groupMetadata.
+          let _botAdminFresh = isBotAdmins
+          try {
+            const _fm = await NXL.groupMetadata(m.chat)
+            const _botJidFresh = NXL.user.id.split(':')[0] + '@s.whatsapp.net'
+            _botAdminFresh = (_fm?.participants || []).some(p =>
+              ((p.id && areJidsSameUser(p.id, _botJidFresh)) || (p.lid && p.lid === p.id)) && p.admin
+            )
+          } catch {}
+          if (_botAdminFresh) {
+            await sleep(2000)
+            try { await NXL.groupParticipantsUpdate(m.chat, [m.sender], 'remove') } catch {}
+          } else {
+            await NXL.sendMessage(m.chat, { text: '⚠️ Bot bukan admin, tidak bisa melakukan kick.' })
+          }
         }
       }
     } catch {}
@@ -1148,7 +1257,7 @@ case 'sesi': {
   const loadSession = () => {
     try { return JSON.parse(fs.readFileSync(SESSION_PATH, 'utf8')) } catch { return {} }
   }
-  const saveSession = (data) => fs.writeFileSync(SESSION_PATH, JSON.stringify(data, null, 2))
+  const saveSession = (data) => safeWriteJSON(SESSION_PATH, data)
 
   let sessionDb = loadSession()
   if (!sessionDb[m.sender]) {
@@ -1309,7 +1418,7 @@ case "gemini": {
   if (!text) return reply(`contoh .${command} halo`)
 
   const { GoogleGenAI } = require("@google/genai")
-  const apikey = global.geminiapi || process.env.GEMINI_API_KEY || ''
+  const apikey = global.geminiapi
   const ai = new GoogleGenAI({ apiKey: apikey })
 
   const web = await ai.models.generateContent({
@@ -2766,37 +2875,27 @@ case "jpmch": {
     : { text }
 
   global.messageJpm = messageContent
-  global.statusjpm = true
 
   await m.reply(`⏳ Memproses JPM ${jenis} ke *${channelList.length}* Channel...`)
 
-  let successCount = 0
+  // [PATCH B] Broadcast lewat engine terpadu (lock+stop+socket+finally cleanup)
+  const _res = await runBroadcast({
+    lockFlag: 'statusjpm',
+    stopFlag: 'stopjpm',
+    targets: channelList,
+    delayMs: () => global.JedaJpm || 5000,
+    sendOne: async (conn, chId) => { await conn.sendMessage(chId, global.messageJpm) },
+    cleanup: () => { if (mediaPath && fs.existsSync(mediaPath)) fs.unlinkSync(mediaPath) }
+  })
 
-  for (let chIdx = 0; chIdx < channelList.length; chIdx++) {
-    const chId = channelList[chIdx]
-    if (global.stopjpm) {
-      delete global.stopjpm
-      break
-    }
-    try {
-      await NXL.sendMessage(chId, global.messageJpm)
-      successCount++
-    } catch {
-    }
-    if (chIdx < channelList.length - 1) {
-      await new Promise(r => setTimeout(r, global.JedaJpm || 5000))
-    }
-  }
-
-  if (mediaPath) fs.unlinkSync(mediaPath)
-  delete global.statusjpm
+  if (_res.rejected) return m.reply(`⚠️ JPM sedang berjalan, tunggu sampai selesai!`)
 
   if (global.pendingGroupsRefresh && global._nxlConn) {
     global.pendingGroupsRefresh = false
     global.prefetchAllGroups().catch(() => {})
   }
 
-  await m.reply(`✅ JPM Channel selesai!\nTerkirim ke *${successCount}/${channelList.length}* Channel.`)
+  await m.reply(`✅ JPM Channel selesai!\nTerkirim ke *${_res.sukses}/${channelList.length}* Channel.`)
 }
 break
 
@@ -2884,7 +2983,6 @@ const cards = rawSlides.map((slideText) => ({
   const skipped = groupIds.length - filteredGroupIds.length
   if (filteredGroupIds.length < 1) return m.reply(`❌ Tidak ada grup target.`)
 
-  global.statusjpm = true
   const senderChat = m.chat
   const jedaDetik = ((global.JedaJpm || 5000) / 1000).toFixed(1)
 
@@ -2892,33 +2990,29 @@ const cards = rawSlides.map((slideText) => ({
     text: `⏳ JPM Slide (${rawSlides.length} slide)\n📨 Target: *${filteredGroupIds.length}* grup\n⏱️ Jeda: *${jedaDetik}* detik${skipped > 0 ? `\n⛔ Di-skip blacklist: *${skipped}*` : ''}\n\n⏳ Mengirim ke grup pertama...`
   })
 
-  let successCount = 0
-  let _firstSent = false
-
-  for (let i = 0; i < filteredGroupIds.length; i++) {
-    const groupId = filteredGroupIds[i]
-    if (global.stopjpm) { delete global.stopjpm; break }
-    try {
+  // [PATCH B] Broadcast lewat engine terpadu
+  const _res = await runBroadcast({
+    lockFlag: 'statusjpm',
+    stopFlag: 'stopjpm',
+    targets: filteredGroupIds,
+    delayMs: () => global.JedaJpm || 5000,
+    sendOne: async (conn, groupId) => {
       const carouselMsg = await buildCarousel(groupId)
-      await NXL.relayMessage(groupId, carouselMsg.message, { messageId: carouselMsg.key.id })
-      successCount++
-      if (!_firstSent) {
-        _firstSent = true
-        await NXL.sendMessage(m.chat, { text: `✅ JPM Slide berjalan!\n🚀 Grup pertama terkirim\n📨 Target: *${filteredGroupIds.length}* grup\n⏱️ Jeda: *${jedaDetik}* detik`, edit: _pKey })
-      }
-    } catch (err) {
-      console.error(`[JPM3] Gagal ke ${groupId}:`, err?.message || err)
+      await conn.relayMessage(groupId, carouselMsg.message, { messageId: carouselMsg.key.id })
+    },
+    onFirstSuccess: async (conn) => {
+      await conn.sendMessage(m.chat, { text: `✅ JPM Slide berjalan!\n🚀 Grup pertama terkirim\n📨 Target: *${filteredGroupIds.length}* grup\n⏱️ Jeda: *${jedaDetik}* detik`, edit: _pKey })
     }
-    if (i < filteredGroupIds.length - 1) await new Promise(r => setTimeout(r, global.JedaJpm || 5000))
-  }
+  })
 
-  delete global.statusjpm
+  if (_res.rejected) return m.reply(`⚠️ JPM sedang berjalan, tunggu sampai selesai atau hentikan dengan .stopjpm`)
+
   if (global.pendingGroupsRefresh && global._nxlConn) {
     global.pendingGroupsRefresh = false
     global.prefetchAllGroups?.().catch(() => {})
   }
   await NXL.sendMessage(senderChat, {
-    text: `✅ JPM Slide selesai!\nTerkirim ke *${successCount}/${filteredGroupIds.length}* grup.\n${skipped > 0 ? `⛔ Di-skip blacklist: *${skipped}* grup` : ''}`
+    text: `✅ JPM Slide selesai!\nTerkirim ke *${_res.sukses}/${filteredGroupIds.length}* grup.\n${skipped > 0 ? `⛔ Di-skip blacklist: *${skipped}* grup` : ''}`
   }, { quoted: m })
 }
 break
@@ -2961,8 +3055,6 @@ case "jasher": case "jpm": case "jaser": {
   const filteredGroupIds = groupIds.filter(id => !blacklistIds.includes(id))
   const skipped = groupIds.length - filteredGroupIds.length
 
-  global.statusjpm = true
-
   const senderChat = m.chat
   const jenis = mediaPath ? "teks & foto" : "teks"
   const jedaDetik = ((global.JedaJpm || 5000) / 1000).toFixed(1)
@@ -2970,49 +3062,35 @@ case "jasher": case "jpm": case "jaser": {
 
   await NXL.sendMessage(m.chat, { text: `⏳ JPM\n📦 Data grup siap\n🔍 Blacklist diperiksa${skipped > 0 ? ` (${skipped} di-skip)` : ''}\n📨 Target: *${filteredGroupIds.length}* grup\n⏱️ Jeda: *${jedaDetik}* detik\n\n⏳ Mengirim ke grup pertama...`, edit: _progressKey })
 
-  let successCount = 0
-  let _firstSent = false
-
-  for (let i = 0; i < filteredGroupIds.length; i++) {
-    const groupId = filteredGroupIds[i]
-    if (global.stopjpm) {
-      delete global.stopjpm
-      break
-    }
-    try {
+  // [PATCH B] Broadcast lewat engine terpadu. Delay acak anti-ban dipertahankan
+  // via delayMs berupa function yang dievaluasi tiap iterasi.
+  const _res = await runBroadcast({
+    lockFlag: 'statusjpm',
+    stopFlag: 'stopjpm',
+    targets: filteredGroupIds,
+    delayMs: () => (global.JedaJpm || 5000) + Math.floor(Math.random() * 3000) + 2000,
+    sendOne: async (conn, groupId) => {
       const antiBanId = Math.random().toString(36).substring(2, 8)
       const uniqueText = `${text}\n\n_id: ${antiBanId}_`
-
       const messageContent = mediaPath
         ? { image: fs.readFileSync(mediaPath), caption: uniqueText }
         : { text: uniqueText }
+      await conn.sendMessage(groupId, messageContent, { quoted: FakeChannel })
+    },
+    onFirstSuccess: async (conn) => {
+      await conn.sendMessage(m.chat, { text: `✅ JPM ${jenis} berjalan!\n🚀 Grup pertama terkirim\n📨 Target: *${filteredGroupIds.length}* grup\n⏱️ Jeda: *${jedaDetik}* detik`, edit: _progressKey })
+    },
+    cleanup: () => { if (mediaPath && fs.existsSync(mediaPath)) fs.unlinkSync(mediaPath) }
+  })
 
-      await NXL.sendMessage(groupId, messageContent, { quoted: FakeChannel })
-      successCount++
-
-      if (!_firstSent) {
-        _firstSent = true
-        await NXL.sendMessage(m.chat, { text: `✅ JPM ${jenis} berjalan!\n🚀 Grup pertama terkirim\n📨 Target: *${filteredGroupIds.length}* grup\n⏱️ Jeda: *${jedaDetik}* detik`, edit: _progressKey })
-      }
-    } catch (err) {
-      console.error(`Gagal kirim ke grup ${groupId}:`, err?.message || err)
-    }
-    if (i < filteredGroupIds.length - 1) {
-      const randomDelay = Math.floor(Math.random() * 3000) + 2000
-      const totalDelay = (global.JedaJpm || 5000) + randomDelay
-      await new Promise(r => setTimeout(r, totalDelay))
-    }
-  }
-
-  if (mediaPath) fs.unlinkSync(mediaPath)
-  delete global.statusjpm
+  if (_res.rejected) return m.reply(`⚠️ JPM sedang berjalan, tunggu sampai selesai atau hentikan dengan .stopjpm`)
 
   if (global.pendingGroupsRefresh && global._nxlConn) {
     global.pendingGroupsRefresh = false
     global.prefetchAllGroups().catch(() => {})
   }
   await NXL.sendMessage(senderChat, {
-    text: `✅ JPM ${jenis} selesai!\nTerkirim ke *${successCount}/${filteredGroupIds.length}* grup.\n${skipped > 0 ? `⛔ Di-skip blacklist: *${skipped}* grup` : ''}`
+    text: `✅ JPM ${jenis} selesai!\nTerkirim ke *${_res.sukses}/${filteredGroupIds.length}* grup.\n${skipped > 0 ? `⛔ Di-skip blacklist: *${skipped}* grup` : ''}`
   }, { quoted: m })
 }
 break
@@ -3052,38 +3130,32 @@ case "jpmht": {
     : { text }
 
   global.messageJpm = messageContent
-  global.statusjpm = true
 
   const senderChat = m.chat
   const jenis = mediaPath ? "teks & foto" : "teks"
   await m.reply(`⏳ Memproses JPM Hidetag ${jenis} ke *${filteredGroupIds.length}* grup...\n${skipped > 0 ? `⛔ *${skipped}* grup di-skip (blacklist)` : ''}`)
 
-  let successCount = 0
+  // [PATCH B] Broadcast lewat engine terpadu; mentions di-set per-grup di dalam sendOne
+  const _res = await runBroadcast({
+    lockFlag: 'statusjpm',
+    stopFlag: 'stopjpm',
+    targets: filteredGroupIds,
+    delayMs: () => global.JedaJpm || 5000,
+    sendOne: async (conn, groupId) => {
+      global.messageJpm.mentions = (allGroups[groupId]?.participants || []).map(e => e.jid || e.id)
+      await conn.sendMessage(groupId, global.messageJpm, { quoted: FakeChannel })
+    },
+    cleanup: () => { if (mediaPath && fs.existsSync(mediaPath)) fs.unlinkSync(mediaPath) }
+  })
 
-  for (const groupId of filteredGroupIds) {
-    if (global.stopjpm) {
-      delete global.stopjpm
-      break
-    }
-    messageContent.mentions = allGroups[groupId].participants.map(e => e.jid || e.id)
-    try {
-      await NXL.sendMessage(groupId, global.messageJpm, { quoted: FakeChannel })
-      successCount++
-    } catch (err) {
-      console.error(`Gagal kirim ke grup ${groupId}:`, err)
-    }
-    await new Promise(r => setTimeout(r, global.JedaJpm || 5000))
-  }
-
-  if (mediaPath) fs.unlinkSync(mediaPath)
-  delete global.statusjpm
+  if (_res.rejected) return m.reply(`⚠️ JPM sedang berjalan, tunggu sampai selesai!`)
 
   if (global.pendingGroupsRefresh && global._nxlConn) {
     global.pendingGroupsRefresh = false
     global.prefetchAllGroups().catch(() => {})
   }
   await NXL.sendMessage(senderChat, {
-    text: `✅ JPM Hidetag ${jenis} selesai!\nTerkirim ke *${successCount}/${filteredGroupIds.length}* grup.\n${skipped > 0 ? `⛔ Di-skip blacklist: *${skipped}* grup` : ''}`
+    text: `✅ JPM Hidetag ${jenis} selesai!\nTerkirim ke *${_res.sukses}/${filteredGroupIds.length}* grup.\n${skipped > 0 ? `⛔ Di-skip blacklist: *${skipped}* grup` : ''}`
   }, { quoted: m })
 }
 break
@@ -3247,23 +3319,20 @@ case "pushkontak-response": {
 
   await m.reply(`🚀 Memulai pushkontak ke dalam grup ${data.subject} dengan total member ${halls.length}`)
 
-  global.statuspush = true
   delete global.textpushkontak
-  let count = 0
 
-  for (const mem of halls) {
-    if (global.stoppush) {
-      delete global.stoppush
-      delete global.statuspush
-      break
-    }
-    await NXL.sendMessage(mem, { text: teks }, { quoted: FakeChannel })
-    await global.sleep(global.JedaPushkontak)
-    count += 1
-  }
+  // [PATCH B] Broadcast lewat engine terpadu (lock statuspush dijamin lepas via finally)
+  const _res = await runBroadcast({
+    lockFlag: 'statuspush',
+    stopFlag: 'stoppush',
+    targets: halls,
+    delayMs: () => global.JedaPushkontak,
+    sendOne: async (conn, mem) => { await conn.sendMessage(mem, { text: teks }, { quoted: FakeChannel }) }
+  })
 
-  delete global.statuspush
-  await m.reply(`✅ Sukses pushkontak!\nPesan berhasil dikirim ke *${count}* member.`, jidawal)
+  if (_res.rejected) return m.reply(`⚠️ Pushkontak sedang berjalan, tunggu sampai selesai!`)
+
+  await m.reply(`✅ Sukses pushkontak!\nPesan berhasil dikirim ke *${_res.sukses}* member.`, jidawal)
 }
 break
 
@@ -3348,38 +3417,31 @@ case "pushkontak-response2": {
 
   if (halls.length < 1) return m.reply(`Tidak ada member yang bisa di-push.`)
 
-  global.statuspush = true
-  let count = 0
-
   await m.reply(`🚀 Memulai pushkontak autosave ke dalam grup *${data.subject}*\nTotal member: *${halls.length}*`)
 
-  for (const mem of halls) {
-    if (global.stoppush) {
-      delete global.stoppush
-      break
-    }
-    try {
+  // [PATCH B] Broadcast lewat engine terpadu; sendOne kirim teks + vcard (feature-parity)
+  const _res = await runBroadcast({
+    lockFlag: 'statuspush',
+    stopFlag: 'stoppush',
+    targets: halls,
+    delayMs: () => global.JedaPushkontak,
+    sendOne: async (conn, mem) => {
       const nomorBersih = mem.split("@")[0]
       const vcard = `BEGIN:VCARD\nVERSION:3.0\nFN:${namaKontak} #${nomorBersih}\nTEL;type=CELL;type=VOICE;waid=${nomorBersih}:+${nomorBersih}\nEND:VCARD`
-
-      await NXL.sendMessage(mem, { text: teks }, { quoted: FakeChannel })
-      await NXL.sendMessage(mem, {
+      await conn.sendMessage(mem, { text: teks }, { quoted: FakeChannel })
+      await conn.sendMessage(mem, {
         contacts: {
           displayName: `${namaKontak} #${nomorBersih}`,
           contacts: [{ vcard }]
         }
       })
-      count += 1
-    } catch (e) {
-      console.log("Gagal ke:", mem, e.message)
-    }
-    await global.sleep(global.JedaPushkontak)
-  }
+    },
+    cleanup: () => { try { delete global.textpushkontak2; delete global.namakontak2 } catch {} }
+  })
 
-  delete global.textpushkontak2
-  delete global.namakontak2
-  delete global.statuspush
-  await m.reply(`✅ Sukses pushkontak!\nTotal kontak berhasil dikirim ke *${count}* dari *${halls.length}* member.`, jidawal)
+  if (_res.rejected) return m.reply(`⚠️ Pushkontak sedang berjalan, tunggu sampai selesai!`)
+
+  await m.reply(`✅ Sukses pushkontak!\nTotal kontak berhasil dikirim ke *${_res.sukses}* dari *${halls.length}* member.`, jidawal)
   break
 }
 
@@ -3516,7 +3578,7 @@ case "savekontak-response": {
     }
 
     const newContacts = [...new Set([...existingContacts, ...halls])]
-    fs.writeFileSync('./database/contacts.json', JSON.stringify(newContacts, null, 2))
+    safeWriteJSON('./database/contacts.json', newContacts)
 
     const vcardContent = halls.map(contact => {
       const phone = contact.split("@")[0]
@@ -3548,7 +3610,7 @@ case "savekontak-response": {
     )
 
     delete global.namakontak
-    fs.writeFileSync("./database/contacts.json", "[]")
+    safeWriteJSON("./database/contacts.json", [])
     fs.writeFileSync("./database/contacts.vcf", "")
 
   } catch (err) {
@@ -4341,7 +4403,8 @@ case 'song': {
 break
 
 case 'playch': {
-  if (!isCreator) return elaina.sendMessage(m.chat, { text: global.mess.only.owner }, { quoted: m })
+  // [PATCH E] Fix F1-06: 'elaina' tidak terdefinisi & global.mess.only.owner tidak ada.
+  if (!isCreator) return m.reply(mess.owner)
   if (!text) return NXL.sendMessage(m.chat, { text: 'Contoh: .playch aku yang tersakiti' }, { quoted: m })
   if (!global.idsal) return NXL.sendMessage(m.chat, { react: { text: "❌", key: m.key } })
 
@@ -4604,7 +4667,15 @@ case 'caratt': {
     }
 
     let gagal = 0
+    let _consecutiveFail = 0
     for (let i = 0; i < results.length; i++) {
+      // [PATCH E] F6-02: hentikan bila koneksi mati, atau jika sumber tampak down
+      // (2 hasil beruntun gagal total) agar tidak menggiling operasi berat sia-sia.
+      if (!global._connAlive) break
+      if (_consecutiveFail >= 2) {
+        await m.reply('⚠️ Sumber TikTok sepertinya sedang bermasalah, sisa video dilewati.')
+        break
+      }
       const v = results[i]
       await m.reply(`⏬ Mengunduh video ${i + 1}/${results.length}...`)
 
@@ -4624,12 +4695,15 @@ case 'caratt': {
 
       if (!berhasilKirim) {
         gagal++
+        _consecutiveFail++
         const cap = `🎵 *TikTok Result ${i + 1}/${results.length}*\n` +
           `👤 *Akun:* @${v.author?.unique_id || '-'}\n` +
           `📝 *Deskripsi:* ${(v.title || v.desc || '').slice(0, 100)}\n` +
           `❤️ *Likes:* ${(v.digg_count || 0).toLocaleString()}\n\n` +
           `_Powered by ${ownername}_`
         await m.reply(`⚠️ Video ${i + 1} gagal diunduh.\n\n${cap}`)
+      } else {
+        _consecutiveFail = 0
       }
 
       if (i < results.length - 1) await new Promise(r => setTimeout(r, 4000))
@@ -5416,21 +5490,23 @@ case 'sendstatus': {
     let allGroups = await NXL.groupFetchAllParticipating()
     let groupIds = Object.keys(allGroups)
     await m.reply(`📢 Mengirim ke *${groupIds.length}* grup...`)
-    let sukses = 0, gagal = 0
-    for (let gid of groupIds) {
-      try {
-        await groupStatus(gid, { ...contentDecoded })
-        sukses++
-        await new Promise(r => setTimeout(r, 1500))
-      } catch {
-        gagal++
+    // [PATCH B] Broadcast lewat engine terpadu — kini dapat dihentikan (.stopswgc)
+    // dan otomatis berhenti saat disconnect (fix T2-16 unstoppable loop).
+    const _res = await runBroadcast({
+      lockFlag: 'statusswgc',
+      stopFlag: 'stopswgc',
+      targets: groupIds,
+      delayMs: 1500,
+      sendOne: async (conn, gid) => { await groupStatus(gid, { ...contentDecoded }) },
+      cleanup: () => {
+        for (let key of ['image', 'video', 'audio']) {
+          let filePath = contentDecoded?.[key]?.url
+          if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath)
+        }
       }
-    }
-    for (let key of ['image', 'video', 'audio']) {
-      let filePath = contentDecoded?.[key]?.url
-      if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath)
-    }
-    return m.reply(`✅ Selesai!\n📤 Sukses: *${sukses}* | ❌ Gagal: *${gagal}*`)
+    })
+    if (_res.rejected) return m.reply(`⚠️ Broadcast status sedang berjalan, tunggu selesai atau hentikan dengan .stopswgc`)
+    return m.reply(`✅ Selesai!\n📤 Sukses: *${_res.sukses}* | ❌ Gagal: *${_res.gagal}*`)
   }
 
   let sent = await groupStatus(groupId, contentDecoded)
@@ -5520,7 +5596,6 @@ case 'autojpmswgc': {
 
   const content = global.autoSwgcContent
   const jeda = global.JedaSwgc || 5000
-  global.stopswgc = false
 
   let allGroups
   try {
@@ -5529,7 +5604,6 @@ case 'autojpmswgc': {
       new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 20000))
     ])
   } catch (e) {
-    global.stopswgc = false
     return m.reply(`❌ Gagal mengambil daftar grup: ${e.message}`)
   }
   const blacklist = loadBlacklistSwgc()
@@ -5539,34 +5613,24 @@ case 'autojpmswgc': {
 
   await m.reply(`🚀 Mulai autojpmswgc ke *${groupIds.length}* grup\n⏱ Jeda: *${jeda}ms* per grup\n\nKirim *.stopswgc* untuk menghentikan.`)
 
-  let sukses = 0, gagal = 0, index = 0
-
-  for (let gid of groupIds) {
-    if (global.stopswgc) break
-    index++
-    try {
-      await groupStatus(gid, { ...content })
-      sukses++
-    } catch {
-      gagal++
+  // [PATCH B] Broadcast lewat engine terpadu (run-lock statusswgc + stop + finally cleanup)
+  const _res = await runBroadcast({
+    lockFlag: 'statusswgc',
+    stopFlag: 'stopswgc',
+    targets: groupIds,
+    delayMs: () => global.JedaSwgc || 5000,
+    sendOne: async (conn, gid) => { await groupStatus(gid, { ...content }) },
+    cleanup: () => {
+      for (const key of ['image', 'video', 'audio']) {
+        const filePath = content?.[key]?.url
+        if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath)
+      }
     }
-    if (index < groupIds.length && !global.stopswgc) {
-      await new Promise(r => setTimeout(r, jeda))
-    }
-  }
+  })
 
-  const stopped = global.stopswgc
-  global.stopswgc = false
+  if (_res.rejected) return m.reply(`⚠️ Broadcast SWGC sedang berjalan, tunggu selesai atau hentikan dengan .stopswgc`)
 
-
-  try {
-    for (const key of ['image', 'video', 'audio']) {
-      const filePath = content?.[key]?.url
-      if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath)
-    }
-  } catch {}
-
-  m.reply(`${stopped ? '⛔ Dihentikan!' : '✅ Selesai!'}\n📤 Sukses: *${sukses}*\n❌ Gagal: *${gagal}*\n📊 Total: *${index}/${groupIds.length}*`
+  m.reply(`${_res.stopped ? '⛔ Dihentikan!' : '✅ Selesai!'}\n📤 Sukses: *${_res.sukses}*\n❌ Gagal: *${_res.gagal}*\n📊 Total: *${_res.index}/${groupIds.length}*`
   )
 }
 break
@@ -5659,13 +5723,11 @@ case 'autojpm': {
 
   const jpmC = global.jpmContent
   const jpmJeda = global.JedaJpm || 4000
-  global.stopjpm = false
 
   let allGroupsJpm
   try {
     allGroupsJpm = await global.getGroupsCached()
   } catch (e) {
-    global.stopjpm = false
     return m.reply(`❌ Gagal mengambil daftar grup: ${e.message}`)
   }
   let blacklistJpm = []
@@ -5678,25 +5740,18 @@ case 'autojpm': {
   const skippedJpm = Object.keys(allGroupsJpm).length - groupIdsJpm.length
   await m.reply(`🚀 Mulai autojpm ke *${groupIdsJpm.length}* grup\n⏱ Jeda: *${jpmJeda}ms*${skippedJpm > 0 ? `\n⛔ Skip blacklist: *${skippedJpm}* grup` : ''}\n\nKirim *.stopjpm* untuk menghentikan.`)
 
-  let jpmSukses = 0, jpmGagal = 0, jpmIdx = 0
+  // [PATCH B] Broadcast lewat engine terpadu (kini ber-lock statusjpm, fix T2-13 concurrent)
+  const _res = await runBroadcast({
+    lockFlag: 'statusjpm',
+    stopFlag: 'stopjpm',
+    targets: groupIdsJpm,
+    delayMs: () => global.JedaJpm || 4000,
+    sendOne: async (conn, gid) => { await conn.sendMessage(gid, jpmC, { quoted: FakeChannel }) }
+  })
 
-  for (const gid of groupIdsJpm) {
-    if (global.stopjpm) break
-    jpmIdx++
-    try {
-      await NXL.sendMessage(gid, jpmC, { quoted: FakeChannel })
-      jpmSukses++
-    } catch {
-      jpmGagal++
-    }
-    if (jpmIdx < groupIdsJpm.length && !global.stopjpm) {
-      await new Promise(r => setTimeout(r, jpmJeda))
-    }
-  }
+  if (_res.rejected) return m.reply(`⚠️ JPM sedang berjalan, tunggu sampai selesai atau hentikan dengan .stopjpm`)
 
-  const jpmStopped = global.stopjpm
-  global.stopjpm = false
-  m.reply(`${jpmStopped ? '⛔ Dihentikan!' : '✅ Selesai!'}\n📤 Sukses: *${jpmSukses}*\n❌ Gagal: *${jpmGagal}*\n📊 Total: *${jpmIdx}/${groupIdsJpm.length}*`)
+  m.reply(`${_res.stopped ? '⛔ Dihentikan!' : '✅ Selesai!'}\n📤 Sukses: *${_res.sukses}*\n❌ Gagal: *${_res.gagal}*\n📊 Total: *${_res.index}/${groupIdsJpm.length}*`)
 }
 break
 
@@ -5740,28 +5795,31 @@ case 'jpmswgc': {
       new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 20000))
     ])
   } catch (e) {
+    if (jpmswgcTempFile && fs.existsSync(jpmswgcTempFile)) fs.unlinkSync(jpmswgcTempFile)
     return m.reply(`❌ Gagal mengambil daftar grup: ${e.message}`)
   }
   const groupIdsSwgc = Object.keys(allGroupsSwgc)
 
-  if (!groupIdsSwgc.length) return m.reply("❌ Tidak ada grup.")
+  if (!groupIdsSwgc.length) {
+    if (jpmswgcTempFile && fs.existsSync(jpmswgcTempFile)) fs.unlinkSync(jpmswgcTempFile)
+    return m.reply("❌ Tidak ada grup.")
+  }
 
   await m.reply(`🚀 Mengirim JPMSWGC ke *${groupIdsSwgc.length}* grup...`)
 
-  let swgcSukses = 0, swgcGagal = 0
+  // [PATCH B] Broadcast lewat engine terpadu (fix T2-05: stop-check + socket-check + lock)
+  const _res = await runBroadcast({
+    lockFlag: 'statusswgc',
+    stopFlag: 'stopswgc',
+    targets: groupIdsSwgc,
+    delayMs: () => global.JedaSwgc || 5000,
+    sendOne: async (conn, gid) => { await groupStatus(gid, { ...jpmswgcContent }) },
+    cleanup: () => { if (jpmswgcTempFile && fs.existsSync(jpmswgcTempFile)) fs.unlinkSync(jpmswgcTempFile) }
+  })
 
-  for (const gid of groupIdsSwgc) {
-    try {
-      await groupStatus(gid, { ...jpmswgcContent })
-      swgcSukses++
-    } catch {
-      swgcGagal++
-    }
-    await new Promise(r => setTimeout(r, global.JedaSwgc || 5000))
-  }
+  if (_res.rejected) return m.reply(`⚠️ Broadcast SWGC sedang berjalan, tunggu selesai atau hentikan dengan .stopswgc`)
 
-  if (jpmswgcTempFile && fs.existsSync(jpmswgcTempFile)) fs.unlinkSync(jpmswgcTempFile)
-  m.reply(`✅ Selesai!\n📤 Sukses: *${swgcSukses}*\n❌ Gagal: *${swgcGagal}*\n📊 Total: *${groupIdsSwgc.length}*`)
+  m.reply(`✅ Selesai!\n📤 Sukses: *${_res.sukses}*\n❌ Gagal: *${_res.gagal}*\n📊 Total: *${groupIdsSwgc.length}*`)
 }
 break
 
@@ -5793,28 +5851,25 @@ case 'jaserht': {
   const jenisHt = jaserhtPath ? "teks & foto" : "teks"
   await m.reply(`⏳ Memproses JASERHT ${jenisHt} ke *${filteredHt.length}* grup...\n${skippedHt > 0 ? `⛔ *${skippedHt}* grup di-skip (blacklist)` : ''}`)
 
-  let htSukses = 0, htGagal = 0
-
-  for (const gid of filteredHt) {
-    if (global.stopjpm) {
-      global.stopjpm = false
-      break
-    }
-    try {
+  // [PATCH B] Broadcast lewat engine terpadu (set lock statusjpm, fix T2-14; mentions dipertahankan di sendOne)
+  const _res = await runBroadcast({
+    lockFlag: 'statusjpm',
+    stopFlag: 'stopjpm',
+    targets: filteredHt,
+    delayMs: () => global.JedaJpm || 4000,
+    sendOne: async (conn, gid) => {
       const members = allGroupsHt[gid]?.participants?.map(e => e.jid || e.id) || []
       const htContent = jaserhtPath
         ? { image: fs.readFileSync(jaserhtPath), caption: text, mentions: members }
         : { text, mentions: members }
-      await NXL.sendMessage(gid, htContent, { quoted: FakeChannel })
-      htSukses++
-    } catch (e) {
-      htGagal++
-    }
-    await new Promise(r => setTimeout(r, global.JedaJpm || 4000))
-  }
+      await conn.sendMessage(gid, htContent, { quoted: FakeChannel })
+    },
+    cleanup: () => { if (jaserhtPath && fs.existsSync(jaserhtPath)) fs.unlinkSync(jaserhtPath) }
+  })
 
-  if (jaserhtPath && fs.existsSync(jaserhtPath)) fs.unlinkSync(jaserhtPath)
-  m.reply(`✅ JASERHT ${jenisHt} selesai!\n📤 Sukses: *${htSukses}/${filteredHt.length}*\n${skippedHt > 0 ? `⛔ Di-skip blacklist: *${skippedHt}*` : ''}`)
+  if (_res.rejected) return m.reply(`⚠️ JPM sedang berjalan, tunggu sampai selesai!`)
+
+  m.reply(`✅ JASERHT ${jenisHt} selesai!\n📤 Sukses: *${_res.sukses}/${filteredHt.length}*\n${skippedHt > 0 ? `⛔ Di-skip blacklist: *${skippedHt}*` : ''}`)
 }
 break
 
@@ -6182,7 +6237,7 @@ case "addproduk": {
   const produk = JSON.parse(fs.readFileSync("./database/produk.json"))
   const id = Date.now()
   produk.push({ id, nama, harga: Number(harga), stok: Number(stok), deskripsi, gambar })
-  fs.writeFileSync("./database/produk.json", JSON.stringify(produk, null, 2))
+  safeWriteJSON("./database/produk.json", produk)
 
   return m.reply(`Produk *${nama}* berhasil ditambahkan!\nID: ${id}`)
 }
@@ -6207,7 +6262,7 @@ case "delproduk": {
     produk = produk.filter(p => String(p.id) !== text.trim())
   }
 
-  fs.writeFileSync("./database/produk.json", JSON.stringify(produk, null, 2))
+  safeWriteJSON("./database/produk.json", produk)
   return m.reply(`Produk *${target.nama}* berhasil dihapus.`)
 }
 break
@@ -6236,7 +6291,7 @@ case "setpromo": {
   promo.target = target.toLowerCase()
   promo.interval = Number(intervalMenit) * 60000
   if (!fs.existsSync('./database')) fs.mkdirSync('./database', { recursive: true })
-  fs.writeFileSync("./database/promo.json", JSON.stringify(promo, null, 2))
+  safeWriteJSON("./database/promo.json", promo)
 
   return m.reply(`✅ Promo diset ke *${target}* setiap *${intervalMenit} menit*.`)
 }
@@ -6253,15 +6308,24 @@ case "autopromo": {
     clearInterval(global.intervalPromo)
     delete global.intervalPromo
     promo.status = false
-    fs.writeFileSync("./database/promo.json", JSON.stringify(promo, null, 2))
+    safeWriteJSON("./database/promo.json", promo)
     return m.reply("Autopromo dimatikan.")
   }
 
   promo.status = true
-  fs.writeFileSync("./database/promo.json", JSON.stringify(promo, null, 2))
+  safeWriteJSON("./database/promo.json", promo)
   await m.reply(`Autopromo dinyalakan!\nTarget: *${promo.target}* | Interval: *${promo.interval / 60000} menit*`)
 
   const kirimPromo = async () => {
+    // [PATCH A] Cegah tumpang-tindih tick: jika tick sebelumnya masih berjalan
+    // (loop lebih lama dari interval), lewati tick ini (root cause F6-01).
+    if (global._autopromoRunning) return
+    // [PATCH A] Pakai socket hidup; jika koneksi mati, lewati tick. Interval juga
+    // sudah di-clear saat disconnect — ini lapisan pertahanan tambahan (root cause RC-2).
+    const _conn = global.getLiveConn ? global.getLiveConn() : null
+    if (!_conn) return
+    global._autopromoRunning = true
+    try {
     const dataProduk = JSON.parse(fs.readFileSync("./database/produk.json"))
     if (dataProduk.length < 1) return
 
@@ -6273,7 +6337,7 @@ case "autopromo": {
     if (promo.target === "grup") {
       try {
         const allGroups = await Promise.race([
-          NXL.groupFetchAllParticipating(),
+          _conn.groupFetchAllParticipating(),
           new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 20000))
         ])
         targetList = Object.keys(allGroups)
@@ -6287,9 +6351,11 @@ case "autopromo": {
     }
 
     for (const id of targetList) {
+      // [PATCH A] Hentikan loop bila koneksi putus di tengah broadcast promo.
+      if (!global._connAlive) break
       try {
         if (p.gambar) {
-          await NXL.sendMessage(id, {
+          await _conn.sendMessage(id, {
             image: Buffer.from(p.gambar, "base64"),
             caption: teks,
             contextInfo: {
@@ -6304,7 +6370,7 @@ case "autopromo": {
           }
             })
         } else {
-          await NXL.sendMessage(id, {
+          await _conn.sendMessage(id, {
             text: teks,
             contextInfo: {
             externalAdReply: {
@@ -6321,6 +6387,10 @@ case "autopromo": {
       } catch {
       }
       await sleep(3000)
+    }
+    } finally {
+      // [PATCH A] Selalu lepas guard overlap, apa pun yang terjadi.
+      global._autopromoRunning = false
     }
   }
 
@@ -7235,7 +7305,7 @@ case "caklontong": case "tebakhero": case "family100": case "tebakgambar": case 
   if (global._gameSessions?.[m.chat]) return m.reply('⚠️ Game aktif! Ketik *.nyerah* untuk menyerah.')
   const _gFiles={caklontong:'./game/caklontong.json',family100:'./game/family100.json',tebakgambar:'./game/tebakgambar.json',tebaklogo:'./game/tebaklogo.json',tebakhero:'./game/tebakhero.json',tebakgenshin:'./game/tebakgenshin.json',tebakgame:'./game/tebakgame.json',tebakmakanan:'./game/tebakmakanan.json',tebakbendera:'./game/tebakbendera.json',tebaklagu:'./game/tebaklagu.json',sambungkata:'./game/sambungkata.json',tebaklirik:'./game/tebaklirik.json',asahotak:'./game/asahotak.json',lengkapikalimat:'./game/lengkapikalimat.json',siapakahaku:'./game/siapakahaku.json',susunkata:'./game/susunkata.json',tebakkata:'./game/tebakkata.json',tebakanime:'./game/tebakanime.json',tebakkalimat:'./game/tebakkalimat.json',tebakjorok:'./game/tebakjorok.json',tebakinggris:'./game/tebakinggris.json',tebakhewan:'./game/tebakhewan.json',tebakjkt:'./game/tebakjkt.json'}
   const _gf=_gFiles[command]; if(!_gf||!fs.existsSync(_gf)) return m.reply('❌ Data game tidak tersedia.')
-  try { const _gd=JSON.parse(fs.readFileSync(_gf,'utf-8')); if(!Array.isArray(_gd)||!_gd.length) return m.reply('❌ Data kosong.'); const _s=_gd[Math.floor(Math.random()*_gd.length)]; const _q=_s.soal||_s.deskripsi||'Tebak!'; const _ra=_s.jawaban||_s.name||_s.judul; if(!_ra) return m.reply('❌ Soal error.'); const _j=Array.isArray(_ra)?_ra.map(j=>String(j).toLowerCase()):[String(_ra).toLowerCase()]; const _cap=`🎮 *${command.toUpperCase()}*\n\n${_q}\n\n⏳ 60 detik!\n📌 Reply pesan ini!\nKetik *.nyerah* untuk menyerah.`; let _sm; if(_s.gambar||_s.img){_sm=await NXL.sendMessage(m.chat,{image:{url:_s.gambar||_s.img},caption:_cap},{quoted:m})}else{_sm=await NXL.sendMessage(m.chat,{text:_cap},{quoted:m})}; if(!global._gameSessions) global._gameSessions={}; global._gameSessions[m.chat]={jawaban:_j,messageId:_sm.key.id,timeout:setTimeout(()=>{if(global._gameSessions?.[m.chat]){NXL.sendMessage(m.chat,{text:`⏰ Waktu habis! Jawaban: *${_j.join(' / ')}*`});delete global._gameSessions[m.chat]}},60000)} } catch(e) { m.reply('❌ Error: '+e.message) }
+  try { const _gd=JSON.parse(fs.readFileSync(_gf,'utf-8')); if(!Array.isArray(_gd)||!_gd.length) return m.reply('❌ Data kosong.'); const _s=_gd[Math.floor(Math.random()*_gd.length)]; const _q=_s.soal||_s.deskripsi||'Tebak!'; const _ra=_s.jawaban||_s.name||_s.judul; if(!_ra) return m.reply('❌ Soal error.'); const _j=Array.isArray(_ra)?_ra.map(j=>String(j).toLowerCase()):[String(_ra).toLowerCase()]; const _cap=`🎮 *${command.toUpperCase()}*\n\n${_q}\n\n⏳ 60 detik!\n📌 Reply pesan ini!\nKetik *.nyerah* untuk menyerah.`; let _sm; if(_s.gambar||_s.img){_sm=await NXL.sendMessage(m.chat,{image:{url:_s.gambar||_s.img},caption:_cap},{quoted:m})}else{_sm=await NXL.sendMessage(m.chat,{text:_cap},{quoted:m})}; if(!global._gameSessions) global._gameSessions={}; global._gameSessions[m.chat]={jawaban:_j,messageId:_sm.key.id,timeout:setTimeout(()=>{if(global._gameSessions?.[m.chat]){const _gc=global.getLiveConn&&global.getLiveConn();if(_gc){try{_gc.sendMessage(m.chat,{text:`⏰ Waktu habis! Jawaban: *${_j.join(' / ')}*`})}catch{}}delete global._gameSessions[m.chat]}},60000)} } catch(e) { m.reply('❌ Error: '+e.message) }
 }
 break
 
@@ -7259,7 +7329,7 @@ case "jpm2": {
     jpm2Media = await NXL.downloadAndSaveMediaMessage(qmsg)
   }
 
-  global.statusjpm = true
+  // [PATCH B] Lock statusjpm kini dikelola oleh runBroadcast (akuisisi atomik + rilis finally).
 
 
   let jpm2Groups
@@ -7291,21 +7361,19 @@ case "jpm2": {
   const jpm2Jenis = jpm2Media ? "teks & foto" : "teks"
   await m.reply(`⏳ JPM2 ${jpm2Jenis}\n📋 Target: *${jpm2Filtered.length}* grup\n${jpm2Skipped > 0 ? `⛔ Skip blacklist: *${jpm2Skipped}*` : ''}`)
 
-  let jpm2Count = 0
-  for (let i = 0; i < jpm2Filtered.length; i++) {
-    if (global.stopjpm) { delete global.stopjpm; break }
-    try {
-      await NXL.sendMessage(jpm2Filtered[i], jpm2Content, { quoted: FakeChannel })
-      jpm2Count++
-    } catch {}
-    if (i < jpm2Filtered.length - 1) {
-      await new Promise(r => setTimeout(r, global.JedaJpm || 5000))
-    }
-  }
+  // [PATCH B] Broadcast lewat engine terpadu
+  const _res = await runBroadcast({
+    lockFlag: 'statusjpm',
+    stopFlag: 'stopjpm',
+    targets: jpm2Filtered,
+    delayMs: () => global.JedaJpm || 5000,
+    sendOne: async (conn, gid) => { await conn.sendMessage(gid, jpm2Content, { quoted: FakeChannel }) },
+    cleanup: () => { if (jpm2Media && fs.existsSync(jpm2Media)) fs.unlinkSync(jpm2Media) }
+  })
 
-  if (jpm2Media && fs.existsSync(jpm2Media)) fs.unlinkSync(jpm2Media)
-  delete global.statusjpm
-  await NXL.sendMessage(jpm2Chat, { text: `✅ JPM2 ${jpm2Jenis} selesai!\nTerkirim: *${jpm2Count}/${jpm2Filtered.length}* grup.` }, { quoted: m })
+  if (_res.rejected) return m.reply('⚠️ JPM sedang berjalan! Tunggu selesai atau hentikan dengan .stopjpm')
+
+  await NXL.sendMessage(jpm2Chat, { text: `✅ JPM2 ${jpm2Jenis} selesai!\nTerkirim: *${_res.sukses}/${jpm2Filtered.length}* grup.` }, { quoted: m })
 }
 break
 
@@ -7316,8 +7384,7 @@ case "jpmtesti": {
   if (!/image/.test(mime)) return m.reply('❌ Wajib menyertakan foto! Reply atau kirim foto dengan caption.')
   if (!global.botReady) return m.reply('⏳ Bot baru reconnect, tunggu sebentar.')
 
-  global.statusjpm = true
-
+  // [PATCH B] Lock statusjpm dikelola oleh runBroadcast (akuisisi atomik + rilis finally).
   const testiMedia = await NXL.downloadAndSaveMediaMessage(qmsg)
 
 
@@ -7344,25 +7411,25 @@ case "jpmtesti": {
   const testiChat = m.chat
   await m.reply(`⏳ JPM Testi ke *${testiFiltered.length}* grup...`)
 
-  let testiCount = 0
-  for (let i = 0; i < testiFiltered.length; i++) {
-    if (global.stopjpm) { delete global.stopjpm; break }
-    try {
-      await NXL.sendMessage(testiFiltered[i], {
+  // [PATCH B] Broadcast lewat engine terpadu
+  const _res = await runBroadcast({
+    lockFlag: 'statusjpm',
+    stopFlag: 'stopjpm',
+    targets: testiFiltered,
+    delayMs: () => global.JedaJpm || 5000,
+    sendOne: async (conn, gid) => {
+      await conn.sendMessage(gid, {
         image: fs.readFileSync(testiMedia),
         caption: text,
         contextInfo: { isForwarded: true, mentionedJid: [m.sender], businessMessageForwardInfo: { businessOwnerJid: botNumber } }
       }, { quoted: FakeChannel })
-      testiCount++
-    } catch {}
-    if (i < testiFiltered.length - 1) {
-      await new Promise(r => setTimeout(r, global.JedaJpm || 5000))
-    }
-  }
+    },
+    cleanup: () => { if (fs.existsSync(testiMedia)) fs.unlinkSync(testiMedia) }
+  })
 
-  if (fs.existsSync(testiMedia)) fs.unlinkSync(testiMedia)
-  delete global.statusjpm
-  await NXL.sendMessage(testiChat, { text: `✅ JPM Testi selesai!\nTerkirim: *${testiCount}/${testiFiltered.length}* grup.` }, { quoted: m })
+  if (_res.rejected) return m.reply('⚠️ JPM sedang berjalan! Tunggu selesai atau hentikan dengan .stopjpm')
+
+  await NXL.sendMessage(testiChat, { text: `✅ JPM Testi selesai!\nTerkirim: *${_res.sukses}/${testiFiltered.length}* grup.` }, { quoted: m })
 }
 break
 
@@ -7549,19 +7616,19 @@ case 'antiswgc': {
     if (!isAdmins && !isCreator) return reply('Fitur ini hanya dapat digunakan oleh Admin Grup atau Owner Bot!')
 
     if (!fs.existsSync('./database/antiswgc.json')) {
-        fs.writeFileSync('./database/antiswgc.json', JSON.stringify([]))
+        safeWriteJSON('./database/antiswgc.json', [])
     }
     let antiswgcList = JSON.parse(fs.readFileSync('./database/antiswgc.json', 'utf8'))
 
     if (args[0] === 'on') {
         if (antiswgcList.includes(m.chat)) return reply('Fitur Anti Status/Promosi Grup sudah aktif sebelumnya!')
         antiswgcList.push(m.chat)
-        fs.writeFileSync('./database/antiswgc.json', JSON.stringify(antiswgcList, null, 2))
+        safeWriteJSON('./database/antiswgc.json', antiswgcList)
         reply('✅ *Anti Status Grup (antiswgc) Berhasil Diaktifkan!* Bot akan menghapus kiriman promosi Status/Story Grup dari bot/user lain.')
     } else if (args[0] === 'off') {
         if (!antiswgcList.includes(m.chat)) return reply('Fitur Anti Status/Promosi Grup belum aktif sebelumnya!')
         antiswgcList = antiswgcList.filter(jid => jid !== m.chat)
-        fs.writeFileSync('./database/antiswgc.json', JSON.stringify(antiswgcList, null, 2))
+        safeWriteJSON('./database/antiswgc.json', antiswgcList)
         reply('❌ *Anti Status Grup (antiswgc) Berhasil Dinonaktifkan!*')
     } else {
         reply(`Silakan pilih opsi *on* atau *off*.\n\nContoh:\n*${prefix + command} on*\n*${prefix + command} off*`)
