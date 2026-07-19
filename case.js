@@ -5525,16 +5525,15 @@ case 'uploadsw': {
   await m.reply('⏳ Mengunggah ke status WhatsApp...')
 
   try {
-    // Daftar penerima status: seluruh user tercatat + pengirim, tanpa duplikat.
-    const statusJidList = [...new Set([
-      ...Object.keys(global.db?.users || {}),
-      m.sender
-    ])].filter(Boolean)
-
+    // [FIX] statusJidList DIHAPUS dari opts. Baileys/Wileys memiliki bug "No sessions"
+    // saat statusJidList berisi JID yang belum punya session Signal aktif (bulk users dari
+    // db yang belum pernah dikontak). Tanpa statusJidList, WhatsApp secara native
+    // mem-broadcast status ke SEMUA kontak (perilaku identik dengan app resmi WA).
+    // Upload pertama sebelumnya berhasil karena Baileys fetch prekeys fresh,
+    // tetapi upload kedua gagal karena prekeys sudah consumed/expired untuk bulk JID.
     const optsUpsw = {
       backgroundColor: '#000000',
-      font: 1,
-      statusJidList
+      font: 1
     }
 
     if (isImgUpsw) {
