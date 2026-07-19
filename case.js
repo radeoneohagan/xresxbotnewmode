@@ -2006,7 +2006,7 @@ case "ownermenu": {
 『 🤖 Auto System 』
 ◇ .autojpmswgc ◇ .setautoswgc
 ◇ .stopswgc ◇ .autojoingc
-◇ .swgc ◇ .sendstatus
+◇ .swgc ◇ .sendstatus ◇ .upsw
 
 『 👥 Grup 』
 ◇ .creategc ◇ .leavegc
@@ -5455,6 +5455,69 @@ case 'swgc': case 'upswgc': {
 }
 break
 
+case 'upsw':
+case 'upstatus':
+case 'upstatuswa':
+case 'uploadsw': {
+  if (!isCreator) return m.reply(mess.owner)
+
+  // [UPSW] Pakai socket hidup (Patch A) agar aman setelah reconnect; tidak
+  // memakai runBroadcast (Patch B) karena ini SATU status post, bukan fan-out.
+  const conn = (typeof global.getLiveConn === 'function' && global.getLiveConn()) || NXL
+
+  const captionUpsw = text ? text.trim() : ''
+  const isImgUpsw = /image/.test(mime)
+  const isVidUpsw = /video/.test(mime)
+  const isAudUpsw = /audio/.test(mime)
+
+  if (!isImgUpsw && !isVidUpsw && !isAudUpsw && !captionUpsw) {
+    return m.reply(
+      `*Cara pakai .${command}:*\n` +
+      `• Reply/kirim *gambar/video/audio* + \`.${command} [caption]\`\n` +
+      `• Atau teks biasa: \`.${command} teks status\``
+    )
+  }
+
+  await m.reply('⏳ Mengunggah ke status WhatsApp...')
+
+  try {
+    // Daftar penerima status: seluruh user tercatat + pengirim, tanpa duplikat.
+    const statusJidList = [...new Set([
+      ...Object.keys(global.db?.users || {}),
+      m.sender
+    ])].filter(Boolean)
+
+    const optsUpsw = {
+      backgroundColor: '#000000',
+      font: 1,
+      statusJidList
+    }
+
+    if (isImgUpsw) {
+      const buffer = await quoted.download()
+      if (!buffer || !buffer.length) return m.reply('❌ Gagal mengunduh media.')
+      await conn.sendMessage('status@broadcast', { image: buffer, caption: captionUpsw }, optsUpsw)
+    } else if (isVidUpsw) {
+      const buffer = await quoted.download()
+      if (!buffer || !buffer.length) return m.reply('❌ Gagal mengunduh media.')
+      await conn.sendMessage('status@broadcast', { video: buffer, caption: captionUpsw }, optsUpsw)
+    } else if (isAudUpsw) {
+      const buffer = await quoted.download()
+      if (!buffer || !buffer.length) return m.reply('❌ Gagal mengunduh media.')
+      const isPttUpsw = !!(qmsg && qmsg.ptt) || /ptt/i.test(mime)
+      await conn.sendMessage('status@broadcast', { audio: buffer, mimetype: 'audio/mp4', ptt: isPttUpsw }, optsUpsw)
+    } else {
+      await conn.sendMessage('status@broadcast', { text: captionUpsw }, optsUpsw)
+    }
+
+    await m.reply('✅ Berhasil diunggah ke status WhatsApp!')
+  } catch (e) {
+    console.error('[UPSW ERROR]', e?.message || e)
+    await m.reply('❌ Gagal mengunggah status: ' + (e?.message || e))
+  }
+}
+break
+
 case 'sendstatus': {
   if (!isCreator) return reply(mess.owner)
   const fs = require("fs")
@@ -8090,49 +8153,9 @@ case 'done6': case 'done7': case 'done8': case 'done9': case 'done10': {
   }
 }
 break
-case 'upstatuswa':
-case 'upstatus':
-case 'upsw': {
-    if (!isCreator) return onlyOwn()
-
-    let argsText = text.split(',').map(a => a.trim())
-    let caption = argsText.length > 1 ? argsText.slice(1).join(',') : (argsText[0] || '')
-    let mentionTarget = argsText.length > 1 ? argsText[0] : null
-
-    if (!quoted) return m.reply(`Kutip pesan gambar, video, atau audio dengan caption ${p_c}\nContoh: reply gambar, ketik ${p_c}upsw`)
-
-    let content
-    try {
-        if (quoted.mtype === "audioMessage") {
-            let audioData = await quoted.download()
-            content = { audio: audioData, mimetype: 'audio/mp4', ptt: true }
-        } else if (quoted.mtype === "imageMessage") {
-            let imageData = await quoted.download()
-            content = { image: imageData, caption: caption || '' }
-        } else if (quoted.mtype === "videoMessage") {
-            let videoData = await quoted.download()
-            content = { video: videoData, caption: caption || '' }
-        } else {
-            return m.reply('Hanya bisa gambar, video, atau audio!')
-        }
-
-        const statusJid = 'status@broadcast'
-        const participants = mentionTarget
-            ? [mentionTarget.replace(/[^0-9]/g, '') + '@s.whatsapp.net']
-            : []
-
-        await NXL.sendMessage(statusJid, content, {
-            backgroundColor: '#000000',
-            statusJidList: participants.length ? participants : undefined
-        })
-
-        m.reply('Sukses mengirim status!')
-    } catch (e) {
-        console.log(e)
-        m.reply('Gagal mengirim status: ' + e.message)
-    }
-    break
-}
+// [UPSW] Command .upsw/.upstatus/.upstatuswa dipindah & ditingkatkan (Patch A
+// compliant + dukung text-only/direct-media) — definisi tunggal ada di atas
+// dekat .sendstatus. Blok lama dihapus untuk menghindari duplicate case.
 case "web2apk":
 case "webtoapk":
 case "apkbuilder": {
