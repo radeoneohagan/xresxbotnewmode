@@ -1,0 +1,63 @@
+{
+  "users": {
+    "237620603827@s.whatsapp.net": {
+      "status_deposit": false,
+      "saldo": 0,
+      "afkTime": -1,
+      "afkReason": "",
+      "limit": 10,
+      "NXL": false
+    },
+    "6285624179853@s.whatsapp.net": {
+      "status_deposit": false,
+      "saldo": 0,
+      "afkTime": -1,
+      "afkReason": "",
+      "limit": 10,
+      "NXL": false
+    },
+    "6287728163189@s.whatsapp.net": {
+      "status_deposit": false,
+      "saldo": 0,
+      "afkTime": -1,
+      "afkReason": "",
+      "limit": 10,
+      "NXL": false
+    }
+  },
+  "groups": {
+    "120363399548396110@g.us": {
+      "antilink": false,
+      "antilink2": false,
+      "welcome": false,
+      "mute": false,
+      "simi": false,
+      "blacklistjpm": false
+    },
+    "120363422945569940@g.us": {
+      "antilink": false,
+      "antilink2": false,
+      "welcome": false,
+      "mute": false,
+      "simi": false,
+      "blacklistjpm": false
+    },
+    "120363320190201453@g.us": {
+      "antilink": false,
+      "antilink2": false,
+      "welcome": false,
+      "mute": false,
+      "simi": false,
+      "blacklistjpm": false
+    }
+  },
+  "database": {},
+  "settings": {
+    "anticall": false,
+    "autobio": false,
+    "autoread": false,
+    "autopromosi": false,
+    "autotyping": false,
+    "readsw": false
+  }
+}
