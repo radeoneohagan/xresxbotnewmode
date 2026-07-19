@@ -252,9 +252,6 @@ let db_respon_list = global.sendJsonCache;
 let listStore = global.sendJsonCache;
 let set_proses = global.sendJsonCache;
 let set_done = global.sendJsonCache
-if (m.message) {
-console.log(chalk.black(chalk.bgWhite('[ PESAN ]')), chalk.black(chalk.bgGreen(new Date().toLocaleTimeString())), chalk.black(chalk.bgBlue(budy || m.mtype || '')) + '\n' + chalk.magenta('=> Dari'), chalk.green(pushname || 'Unknown'), chalk.yellow(m.sender || '') + '\n' + chalk.blueBright('=> Di'), chalk.green(m.isGroup ? (pushname || 'Group Chat') : 'Private Chat') + ' ' + chalk.cyan(from || ''));
-}
 let ppuser = null
 let ppnyauser = null
 const getPPUser = async () => {
@@ -673,14 +670,15 @@ const hasContent = body || hasMedia
 
 if (!global._processedMsgIds) global._processedMsgIds = new Set()
 const _msgId = m.key?.id || ''
-if (_msgId) {
+// [PERF-FIX] Dedup lapisan kedua. Skip check untuk type 'append' (re-emit internal
+// dari sticker hash & interactiveResponse) agar fitur tsb tetap berfungsi.
+// Pesan WA biasa (notify) yang lolos dedup awal (message.js) hanya bisa sampai sini
+// sekali saja — dedup awal sudah memblokir duplikat notify.
+const _isAppend = chatUpdate && chatUpdate.type === 'append'
+if (_msgId && !_isAppend) {
   if (global._processedMsgIds.has(_msgId)) return
   global._processedMsgIds.add(_msgId)
   // [PATCH C] FIFO eviction — hapus ID TERLAMA, bukan clear-all.
-  // clear-all bisa menghapus ID pesan yang BARU saja ditambahkan (termasuk yang
-  // sedang diproses), sehingga redelivery/re-emit dengan ID sama lolos dedup dan
-  // menyebabkan double-execute (root cause F1-01/T2-08). Set menjaga urutan insert,
-  // jadi menghapus dari depan = membuang yang paling lama, ID baru tetap terjaga.
   if (global._processedMsgIds.size > 500) {
     const _removeCount = global._processedMsgIds.size - 400
     let _i = 0
@@ -689,6 +687,12 @@ if (_msgId) {
       global._processedMsgIds.delete(_oldId)
     }
   }
+}
+
+// [PERF-FIX] Log pesan HANYA setelah dedup lolos — memastikan setiap pesan
+// hanya mencetak log SATU kali di panel Pterodactyl (fix double/triple log).
+if (m.message) {
+console.log(chalk.black(chalk.bgWhite('[ PESAN ]')), chalk.black(chalk.bgGreen(new Date().toLocaleTimeString())), chalk.black(chalk.bgBlue(budy || m.mtype || '')) + '\n' + chalk.magenta('=> Dari'), chalk.green(pushname || 'Unknown'), chalk.yellow(m.sender || '') + '\n' + chalk.blueBright('=> Di'), chalk.green(m.isGroup ? (pushname || 'Group Chat') : 'Private Chat') + ' ' + chalk.cyan(from || ''));
 }
 
 if (!isCmd && global.autoJoinGc && budy && budy.includes('chat.whatsapp.com/')) {
