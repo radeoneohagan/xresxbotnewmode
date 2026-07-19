@@ -5525,16 +5525,41 @@ case 'uploadsw': {
   await m.reply('⏳ Mengunggah ke status WhatsApp...')
 
   try {
-    // [FIX] statusJidList DIHAPUS dari opts. Baileys/Wileys memiliki bug "No sessions"
-    // saat statusJidList berisi JID yang belum punya session Signal aktif (bulk users dari
-    // db yang belum pernah dikontak). Tanpa statusJidList, WhatsApp secara native
-    // mem-broadcast status ke SEMUA kontak (perilaku identik dengan app resmi WA).
-    // Upload pertama sebelumnya berhasil karena Baileys fetch prekeys fresh,
-    // tetapi upload kedua gagal karena prekeys sudah consumed/expired untuk bulk JID.
+    // [UPSW AUDIENCE] Sumber audience = kontak WhatsApp tersinkronisasi (store.contacts),
+    // yang mencerminkan buku kontak akun bot — PALING mendekati perilaku app WA resmi.
+    // store.contacts diisi oleh store.bind(ev) dari sinkronisasi kontak (messaging-history.set,
+    // contacts.set/upsert/update), jauh lebih tepat daripada global.db.users.
+    //
+    // Difilter HANYA ke JID @s.whatsapp.net (buang @lid, @g.us, dan device-suffix ':')
+    // untuk menghindari bug Baileys/Wileys "No sessions": global.db.users dahulu memuat
+    // JID format LID dari sender grup, sehingga upload pertama sukses lalu upload
+    // berikutnya gagal karena mismatch resolusi session LID/PN.
+    let statusJidList = []
+    try {
+      const _contacts = (global.store && global.store.contacts) ? global.store.contacts : {}
+      statusJidList = Object.keys(_contacts).filter(jid =>
+        typeof jid === 'string' &&
+        jid.endsWith('@s.whatsapp.net') &&
+        !jid.includes(':')
+      )
+    } catch { statusJidList = [] }
+    // Selalu sertakan nomor bot sendiri agar bot dapat melihat statusnya.
+    try {
+      const _botSelf = NXL.user?.id ? NXL.decodeJid(NXL.user.id) : null
+      if (_botSelf && _botSelf.endsWith('@s.whatsapp.net') && !statusJidList.includes(_botSelf)) {
+        statusJidList.push(_botSelf)
+      }
+    } catch {}
+    statusJidList = [...new Set(statusJidList)]
+
     const optsUpsw = {
       backgroundColor: '#000000',
       font: 1
     }
+    // Hanya set statusJidList bila ada kontak valid. Jika kosong (mis. kontak belum
+    // tersinkronisasi tepat setelah boot), biarkan Baileys memakai default-nya agar
+    // upload tetap berhasil tanpa "No sessions".
+    if (statusJidList.length > 0) optsUpsw.statusJidList = statusJidList
 
     if (isImgUpsw) {
       const buffer = await quoted.download()
