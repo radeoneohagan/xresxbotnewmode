@@ -5505,9 +5505,11 @@ case 'upstatuswa':
 case 'uploadsw': {
   if (!isCreator) return m.reply(mess.owner)
 
-  // [UPSW] Pakai socket hidup (Patch A) agar aman setelah reconnect; tidak
-  // memakai runBroadcast (Patch B) karena ini SATU status post, bukan fan-out.
-  const conn = (typeof global.getLiveConn === 'function' && global.getLiveConn()) || NXL
+  // [UPSW] Logika audience + upload status dipindah ke helper bersama
+  // (lib/upswStatus.js) agar dapat di-reuse oleh .done1–.done10 TANPA
+  // duplikasi kode. Perilaku upload tetap identik (socket hidup Patch A,
+  // statusJidList dari store.contacts PN-only + nomor bot).
+  const { uploadStatusWA } = require('./lib/upswStatus')
 
   const captionUpsw = text ? text.trim() : ''
   const isImgUpsw = /image/.test(mime)
@@ -5525,57 +5527,25 @@ case 'uploadsw': {
   await m.reply('⏳ Mengunggah ke status WhatsApp...')
 
   try {
-    // [UPSW AUDIENCE] Sumber audience = kontak WhatsApp tersinkronisasi (store.contacts),
-    // yang mencerminkan buku kontak akun bot — PALING mendekati perilaku app WA resmi.
-    // store.contacts diisi oleh store.bind(ev) dari sinkronisasi kontak (messaging-history.set,
-    // contacts.set/upsert/update), jauh lebih tepat daripada global.db.users.
-    //
-    // Difilter HANYA ke JID @s.whatsapp.net (buang @lid, @g.us, dan device-suffix ':')
-    // untuk menghindari bug Baileys/Wileys "No sessions": global.db.users dahulu memuat
-    // JID format LID dari sender grup, sehingga upload pertama sukses lalu upload
-    // berikutnya gagal karena mismatch resolusi session LID/PN.
-    let statusJidList = []
-    try {
-      const _contacts = (global.store && global.store.contacts) ? global.store.contacts : {}
-      statusJidList = Object.keys(_contacts).filter(jid =>
-        typeof jid === 'string' &&
-        jid.endsWith('@s.whatsapp.net') &&
-        !jid.includes(':')
-      )
-    } catch { statusJidList = [] }
-    // Selalu sertakan nomor bot sendiri agar bot dapat melihat statusnya.
-    try {
-      const _botSelf = NXL.user?.id ? NXL.decodeJid(NXL.user.id) : null
-      if (_botSelf && _botSelf.endsWith('@s.whatsapp.net') && !statusJidList.includes(_botSelf)) {
-        statusJidList.push(_botSelf)
-      }
-    } catch {}
-    statusJidList = [...new Set(statusJidList)]
-
-    const optsUpsw = {
-      backgroundColor: '#000000',
-      font: 1
-    }
-    // Hanya set statusJidList bila ada kontak valid. Jika kosong (mis. kontak belum
-    // tersinkronisasi tepat setelah boot), biarkan Baileys memakai default-nya agar
-    // upload tetap berhasil tanpa "No sessions".
-    if (statusJidList.length > 0) optsUpsw.statusJidList = statusJidList
-
+    // [UPSW AUDIENCE] Audience (statusJidList) & pemilihan socket hidup kini
+    // ditangani helper uploadStatusWA (lib/upswStatus.js) — sumber kebenaran
+    // tunggal, dipakai juga oleh .done1–.done10. Perilaku tetap sama:
+    // store.contacts PN-only (buang @lid) + nomor bot, fallback bila kosong.
     if (isImgUpsw) {
       const buffer = await quoted.download()
       if (!buffer || !buffer.length) return m.reply('❌ Gagal mengunduh media.')
-      await conn.sendMessage('status@broadcast', { image: buffer, caption: captionUpsw }, optsUpsw)
+      await uploadStatusWA(NXL, { image: buffer, caption: captionUpsw })
     } else if (isVidUpsw) {
       const buffer = await quoted.download()
       if (!buffer || !buffer.length) return m.reply('❌ Gagal mengunduh media.')
-      await conn.sendMessage('status@broadcast', { video: buffer, caption: captionUpsw }, optsUpsw)
+      await uploadStatusWA(NXL, { video: buffer, caption: captionUpsw })
     } else if (isAudUpsw) {
       const buffer = await quoted.download()
       if (!buffer || !buffer.length) return m.reply('❌ Gagal mengunduh media.')
       const isPttUpsw = !!(qmsg && qmsg.ptt) || /ptt/i.test(mime)
-      await conn.sendMessage('status@broadcast', { audio: buffer, mimetype: 'audio/mp4', ptt: isPttUpsw }, optsUpsw)
+      await uploadStatusWA(NXL, { audio: buffer, mimetype: 'audio/mp4', ptt: isPttUpsw })
     } else {
-      await conn.sendMessage('status@broadcast', { text: captionUpsw }, optsUpsw)
+      await uploadStatusWA(NXL, { text: captionUpsw })
     }
 
     await m.reply('✅ Berhasil diunggah ke status WhatsApp!')
@@ -8116,6 +8086,9 @@ case 'done6': case 'done7': case 'done8': case 'done9': case 'done10': {
 
     const harga = priceEntry.harga
     const tanggalNow = moment().tz('Asia/Jakarta').format('DD MMMM YYYY')
+    // [DONE] Masa aktif dihitung otomatis dari jumlah hari pada durasi
+    // (7/30/60/90/365, dst.), bukan hardcode. Hari ini + N hari.
+    const tanggalBerlaku = moment().tz('Asia/Jakarta').add(durasi, 'days').format('DD-MM-YYYY')
 
     const TRX_PATH = './database/trxcounter.json'
     let trxData = { trx: 0 }
@@ -8176,6 +8149,19 @@ case 'done6': case 'done7': case 'done8': case 'done9': case 'done10': {
       }
     }
 
+    // [DONE→UPSW] Setelah upload testimoni ke Channel WA, unggah gambar testimoni
+    // yang sama sebagai Status WhatsApp memakai helper .upsw yang sudah diperbaiki
+    // (lib/upswStatus.js) — reuse penuh, tanpa membuat kode upload status baru.
+    // Sekuensial + di-await (bukan fire-and-forget) sehingga tidak ada duplicate
+    // upload / race condition. Dibungkus try/catch agar kegagalan status tidak
+    // membatalkan pengiriman pesan selesai ke customer.
+    try {
+      const { uploadStatusWA } = require('./lib/upswStatus')
+      await uploadStatusWA(NXL, { image: imgBuffer, caption: caption })
+    } catch (swErr) {
+      console.log('[DONE] Gagal upload status WA:', swErr.message)
+    }
+
     await NXL.sendMessage(m.chat, { react: { text: '✅', key: m.key } })
 
     const completionMsg = `✅ *TRANSAKSI SELESAI*\n\n` +
@@ -8205,7 +8191,8 @@ case 'done6': case 'done7': case 'done8': case 'done9': case 'done10': {
         `Pesanan VPN kamu sudah aktif:\n\n` +
         `• Server: ${serverCode === 'SG' ? 'Singapore' : 'Indonesia'}\n` +
         `• Durasi: ${durasi} Hari\n` +
-        `• Perangkat: ${jumlahPerangkat} IP\n\n` +
+        `• Perangkat: ${jumlahPerangkat} IP\n` +
+        `• Berlaku Sampai: ${tanggalBerlaku}\n\n` +
         `Terima kasih telah berbelanja di *XRESX DIGITAL VPN* 🙏\n` +
         `Jika ada kendala, silakan hubungi admin.` +
         (linkSection ? `\n${linkSection}` : '') +
