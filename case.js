@@ -2580,8 +2580,6 @@ case "add": {
 
   try {
     const result = await NXL.groupParticipantsUpdate(m.chat, [users], 'add')
-    // [AUDIT-FIX] Cek response actual dari WA — groupParticipantsUpdate mengembalikan
-    // array status per-participant. Hanya reply sukses jika WA benar-benar menambahkan.
     const status = result?.[0]?.status || result?.[0]?.content?.toString() || ''
     const statusCode = typeof status === 'number' ? status : parseInt(status) || 0
 
@@ -2591,7 +2589,35 @@ case "add": {
         mentions: [users]
       }, { quoted: m })
     } else if (statusCode === 403 || status === '403') {
-      return m.reply(`❌ Gagal menambahkan @${users.split('@')[0]}: Pengaturan privasi nomor tersebut tidak mengizinkan ditambahkan ke grup.`)
+      // Privasi tidak mengizinkan — kirim invite link sebagai fallback
+      try {
+        const inviteCode = await NXL.groupInviteCode(m.chat)
+        const inviteLink = `https://chat.whatsapp.com/${inviteCode}`
+        await NXL.sendMessage(users, {
+          text: `Hai! Kamu diundang bergabung ke grup.\n\n${inviteLink}`
+        })
+        return NXL.sendMessage(m.chat, {
+          text: `⚠️ @${users.split('@')[0]} tidak bisa ditambahkan langsung (privasi).\n📩 Undangan telah dikirim via chat pribadi.`,
+          mentions: [users]
+        }, { quoted: m })
+      } catch (invErr) {
+        return m.reply(`❌ Gagal menambahkan @${users.split('@')[0]}: Pengaturan privasi nomor tersebut tidak mengizinkan. Undangan juga gagal dikirim.`)
+      }
+    } else if (statusCode === 401 || status === '401') {
+      // 401 = user belum menjadi kontak/nomor invalid — kirim invite sebagai fallback
+      try {
+        const inviteCode = await NXL.groupInviteCode(m.chat)
+        const inviteLink = `https://chat.whatsapp.com/${inviteCode}`
+        await NXL.sendMessage(users, {
+          text: `Hai! Kamu diundang bergabung ke grup.\n\n${inviteLink}`
+        })
+        return NXL.sendMessage(m.chat, {
+          text: `⚠️ @${users.split('@')[0]} tidak bisa ditambahkan langsung (401).\n📩 Undangan telah dikirim via chat pribadi.`,
+          mentions: [users]
+        }, { quoted: m })
+      } catch (invErr) {
+        return m.reply(`❌ Gagal menambahkan: respons WA — "401". Undangan juga gagal dikirim.`)
+      }
     } else if (statusCode === 408 || status === '408') {
       return NXL.sendMessage(m.chat, {
         text: `⏳ Undangan terkirim ke @${users.split('@')[0]} (perlu persetujuan)`,
@@ -2600,10 +2626,36 @@ case "add": {
     } else if (statusCode === 409 || status === '409') {
       return m.reply(`⚠️ @${users.split('@')[0]} sudah ada di grup ini.`)
     } else {
-      return m.reply(`⚠️ Gagal menambahkan: respons WA — ${JSON.stringify(status)}`)
+      // Fallback generik — coba kirim invite
+      try {
+        const inviteCode = await NXL.groupInviteCode(m.chat)
+        const inviteLink = `https://chat.whatsapp.com/${inviteCode}`
+        await NXL.sendMessage(users, {
+          text: `Hai! Kamu diundang bergabung ke grup.\n\n${inviteLink}`
+        })
+        return NXL.sendMessage(m.chat, {
+          text: `⚠️ Gagal menambahkan @${users.split('@')[0]} secara langsung (${status}).\n📩 Undangan telah dikirim via chat pribadi.`,
+          mentions: [users]
+        }, { quoted: m })
+      } catch {
+        return m.reply(`⚠️ Gagal menambahkan: respons WA — ${JSON.stringify(status)}`)
+      }
     }
   } catch (e) {
-    return m.reply("❌ Gagal add: " + (e?.message || e))
+    // Exception = bisa jadi timeout / koneksi error — coba invite sebagai last resort
+    try {
+      const inviteCode = await NXL.groupInviteCode(m.chat)
+      const inviteLink = `https://chat.whatsapp.com/${inviteCode}`
+      await NXL.sendMessage(users, {
+        text: `Hai! Kamu diundang bergabung ke grup.\n\n${inviteLink}`
+      })
+      return NXL.sendMessage(m.chat, {
+        text: `⚠️ Gagal add langsung (${e?.message || e}).\n📩 Undangan telah dikirim via chat pribadi ke @${users.split('@')[0]}.`,
+        mentions: [users]
+      }, { quoted: m })
+    } catch {
+      return m.reply("❌ Gagal add: " + (e?.message || e))
+    }
   }
 }
 break
@@ -4421,37 +4473,71 @@ case 'song': {
   if (!text) return m.reply(`*PENGGUNAAN SALAH*\n\nFormat: .${command} [judul_lagu]\nContoh: .${command} Night Changes`)
 
   try {
-    await console.log("mencari")
+    // Pencarian via @vreden/youtube_scraper (search) + yt-search (fallback)
+    let video = null
+    try {
+      const searchResult = await ytdl.search(text)
+      if (searchResult && Array.isArray(searchResult) && searchResult.length > 0) {
+        video = searchResult.find(v => v.type === 'video') || searchResult[0]
+      }
+    } catch {}
 
-    const { data } = await axios.get(`https://api.ikyyxd.my.id/search/ytplayv2?q=${encodeURIComponent(text)}`, { timeout: 20000 })
-    if (!data.status) return m.reply('❌ Hasil pencarian kosong atau lagu tidak ditemukan')
+    // Fallback ke yt-search jika vreden search gagal
+    if (!video) {
+      const ytsResult = await yts(text)
+      const found = ytsResult.videos?.[0]
+      if (found) video = { title: found.title, url: found.url, thumbnail: found.thumbnail, duration: found.seconds }
+    }
 
-    const res = data.result
-    
-    const minutes = Math.floor(res.duration / 60)
-    const seconds = (res.duration % 60).toString().padStart(2, '0')
+    if (!video) return m.reply('❌ Hasil pencarian kosong atau lagu tidak ditemukan')
+
+    const videoUrl = video.url || video.videoUrl || `https://www.youtube.com/watch?v=${video.videoId || video.id}`
+    const title = video.title || 'Unknown'
+    const thumbnail = video.thumbnail || video.thumbnailUrl || ''
+    const durSec = video.duration || video.seconds || 0
+    const minutes = Math.floor(durSec / 60)
+    const seconds = (durSec % 60).toString().padStart(2, '0')
     const formattedDuration = `${minutes}:${seconds}`
 
     let txt = `*MUSIC DOWNLOADER*\n\n`
-    txt += `* TRACK   : ${res.title}\n`
+    txt += `* TRACK   : ${title}\n`
     txt += `* DURATION: ${formattedDuration}\n`
-    txt += `* SOURCE  : ${res.source}\n`
+    txt += `* SOURCE  : YouTube\n`
     txt += `====================================\n\n`
     txt += `_Sedang mengirim berkas audio, mohon tunggu_`
 
-    await NXL.sendMessage(m.chat, {
-      image: { url: res.thumbnail },
-      caption: txt
-    }, { quoted: m })
+    if (thumbnail) {
+      await NXL.sendMessage(m.chat, { image: { url: thumbnail }, caption: txt }, { quoted: m })
+    } else {
+      await m.reply(txt)
+    }
+
+    // Download audio via @vreden/youtube_scraper ytmp3 (primary)
+    let audioUrl = null
+    try {
+      const dlResult = await ytdl.ytmp3(videoUrl, 128)
+      audioUrl = dlResult?.download || dlResult?.url || dlResult?.audio || dlResult?.result?.download || null
+    } catch {}
+
+    // Fallback: lib/scrape.js ytdl API (shinoa.us.kg)
+    if (!audioUrl) {
+      try {
+        const { ytdl: ytdlScrape } = require('./lib/scrape')
+        const scrapeResult = await ytdlScrape(videoUrl)
+        audioUrl = scrapeResult?.result?.download || scrapeResult?.download || scrapeResult?.url || null
+      } catch {}
+    }
+
+    if (!audioUrl) return m.reply('❌ Gagal mendapatkan link download audio. Coba lagi nanti.')
 
     await NXL.sendMessage(m.chat, {
-      audio: { url: res.audio.url },
+      audio: { url: audioUrl },
       mimetype: 'audio/mpeg',
       ptt: false
     }, { quoted: m })
 
   } catch (e) {
-    console.error(e)
+    console.error('[PLAY ERROR]', e.message)
     m.reply('[ ERROR SYSTEM ] Gagal memproses data musik, silakan coba beberapa saat lagi')
   }
 }
