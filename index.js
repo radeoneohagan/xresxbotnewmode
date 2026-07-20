@@ -316,10 +316,6 @@ NXL.ev.on('creds.update', saveCreds)
   
   
 NXL.ev.on('connection.update', async (update) => {
-		// [PATCH A] Abaikan event dari socket lama (epoch tidak cocok).
-		// Mencegah socket yang sudah dibuang mereset _isConnecting / menjadwalkan
-		// reconnect untuk socket baru (root cause T2-07).
-		if (myEpoch !== _connEpoch) return
 		markActivity()
 		const { connection, lastDisconnect, receivedPendingNotifications } = update
 
