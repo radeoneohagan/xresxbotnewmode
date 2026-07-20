@@ -429,9 +429,6 @@ try {
 await Solving(NXL, store)
 
 NXL.ev.on('messages.upsert', async (message) => {
-  // [PATCH A] Abaikan pesan dari socket lama (epoch mismatch) agar tidak
-  // terjadi double-processing / double-execute command (root cause RC-1).
-  if (myEpoch !== _connEpoch) return
   markActivity()
   // [FIX H1] Antilink processing dipindahkan sepenuhnya ke case.js
   // untuk menghindari double-processing (duplicate delete/kick/warning)
