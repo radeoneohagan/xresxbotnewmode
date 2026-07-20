@@ -429,13 +429,22 @@ try {
 await Solving(NXL, store)
 
 NXL.ev.on('messages.upsert', async (message) => {
+  // [DIAG-SEMENTARA] Log tiap event masuk + nilai epoch. Hapus setelah masalah teratasi.
+  console.log(chalk.magenta(`[DIAG] messages.upsert diterima | type=${message?.type} count=${message?.messages?.length} | myEpoch=${myEpoch} _connEpoch=${_connEpoch}`))
   // [PATCH A] Abaikan pesan dari socket lama (epoch mismatch) agar tidak
   // terjadi double-processing / double-execute command (root cause RC-1).
-  if (myEpoch !== _connEpoch) return
+  if (myEpoch !== _connEpoch) {
+    console.log(chalk.red(`[DIAG] >> DIBUANG epoch guard: myEpoch=${myEpoch} != _connEpoch=${_connEpoch}`))
+    return
+  }
   markActivity()
   // [FIX H1] Antilink processing dipindahkan sepenuhnya ke case.js
   // untuk menghindari double-processing (duplicate delete/kick/warning)
-  await MessagesUpsert(NXL, message, store);
+  try {
+    await MessagesUpsert(NXL, message, store);
+  } catch (e) {
+    console.log(chalk.red(`[DIAG] >> MessagesUpsert melempar error ke handler: ${e?.message}`))
+  }
 });
 
 NXL.ev.on('contacts.update', (update) => {

@@ -163,6 +163,8 @@ const budy = (typeof m.text == 'string' ? m.text : '')
 const prefix = "."
 const isCmd = body.startsWith(prefix)
 const command = isCmd ? body.slice(prefix.length).trim().split(' ').shift().toLowerCase() : '';
+// [DIAG-SEMENTARA] Konfirmasi handler case.js tereksekusi + hasil parse. Hapus setelah beres.
+console.log(`[DIAG] case.js handler jalan | isCmd=${isCmd} command="${command}" chat=${m.chat} sender=${m.sender} fromMe=${m.key?.fromMe}`)
 const args = body.trim().split(/ +/).slice(1)
 const text = q = args.join(" ")
 const sender = m.key.fromMe ? (NXL.user.id.split(':')[0]+'@s.whatsapp.net' || NXL.user.id) : (m.key.participant || m.key.remoteJid)
