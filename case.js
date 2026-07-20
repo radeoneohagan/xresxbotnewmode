@@ -8163,7 +8163,7 @@ case 'done6': case 'done7': case 'done8': case 'done9': case 'done10': {
       `│ *Harga:* ${formatRupiah(harga)}\n` +
       `│ *Tanggal:* ${tanggalNow}\n` +
       `└─────────────────────\n\n` +
-      `Terima kasih telah berbelanja di *XRESX DIGITAL VPN* ✓\n` +
+      `Terima kasih telah berbelanja di *${global.ownername}* ✓\n` +
       `_Layanan VPN Premium Terpercaya_`
 
     const channelJid = global.idsal || ''
@@ -8224,7 +8224,7 @@ case 'done6': case 'done7': case 'done8': case 'done9': case 'done10': {
         `• Durasi: ${durasi} Hari\n` +
         `• Perangkat: ${jumlahPerangkat} IP\n` +
         `• Berlaku Sampai: ${tanggalBerlaku}\n\n` +
-        `Terima kasih telah berbelanja di *XRESX DIGITAL VPN* 🙏\n` +
+        `Terima kasih telah berbelanja di *${global.ownername}* 🙏\n` +
         `Jika ada kendala, silakan hubungi admin.` +
         (linkSection ? `\n${linkSection}` : '') +
         `\n\n_PT SONTOLOYO_`
