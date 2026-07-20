@@ -8087,8 +8087,10 @@ case 'done6': case 'done7': case 'done8': case 'done9': case 'done10': {
     const harga = priceEntry.harga
     const tanggalNow = moment().tz('Asia/Jakarta').format('DD MMMM YYYY')
     // [DONE] Masa aktif dihitung otomatis dari jumlah hari pada durasi
-    // (7/30/60/90/365, dst.), bukan hardcode. Hari ini + N hari.
-    const tanggalBerlaku = moment().tz('Asia/Jakarta').add(durasi, 'days').format('DD-MM-YYYY')
+    // (7/30/60/90/365, dst.), bukan hardcode, kalender valid (auto ganti
+    // bulan/tahun/kabisat via moment). Opsi B: hari aktivasi = hari ke-1,
+    // sehingga memakai (durasi - 1) hari. Contoh: 28-07 + 7 Hari => 03-08.
+    const tanggalBerlaku = moment().tz('Asia/Jakarta').add(durasi - 1, 'days').format('DD-MM-YYYY')
 
     const TRX_PATH = './database/trxcounter.json'
     let trxData = { trx: 0 }
