@@ -1862,31 +1862,45 @@ let listMessage = { title: 'List Menu', sections }
 ║ Dev: ${global.ownername}
 ╚═❏
 
+
   ╭◙  *Other Menu*
   ┆• .pushkontak
+  ┆• .pushkontak2
   ┆• .jedapush
   ┆• .jedajpm
+  ┆• .jedajaser
+  ┆• .setjeda
   ┆• .jpm
   ┆• .bljpm
   ┆• .listbljpm
   ┆• .delbljpm
   ┆• .cekidch
-  ╰◙͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏͏
+  ┆• .cekidgc
+  ┆• .cekiduser
+  ┆• .cekch
+  ╰◙
   ╭◙  *Main Menu*
   ┆• .igdownload
   ┆• .removebg
   ┆• .suarateks
+  ┆• .stt
   ┆• .emojimix
   ┆• .pinterest
   ┆• .ttsearch
+  ┆• .ttstalk
+  ┆• .tiktoksearch
   ┆• .gimage
   ┆• .bratvid
   ┆• .ssweb
   ┆• .ffstalk
   ┆• .tiktok
+  ┆• .douyin
   ┆• .brat
   ┆• .sfile
   ┆• .play
+  ┆• .playch
+  ┆• .music
+  ┆• .musicgen
   ╰◙
   ╭◙  *Search Menu*
   ┆• .yts
@@ -1897,19 +1911,27 @@ let listMessage = { title: 'List Menu', sections }
   ┆• .cekgempa
   ┆• .cekcuaca
   ┆• .cekkalender
+  ┆• .infolibur
+  ┆• .liburnasional
+  ┆• .searchcode
+  ┆• .github
   ╰◙
   ╭◙  *Download Menu*
   ┆• .twitter
   ┆• .threads
   ┆• .gdrive
   ┆• .gitclone
+  ┆• .save
+  ┆• .pin
   ╰◙
   ╭◙  *Fun Menu*
   ┆• .artinama
   ┆• .fitnah
+  ┆• .fakereply
   ┆• .cekbeban
   ┆• .cekbucin
   ┆• .cekgay
+  ┆• .cekfemboy
   ┆• .cekjodoh
   ┆• .cekjones
   ┆• .cekkaya
@@ -1923,11 +1945,14 @@ let listMessage = { title: 'List Menu', sections }
   ┆• .faktaunik
   ┆• .meme
   ┆• .waifu
+  ┆• .waifucantik
   ┆• .quotesanime
   ┆• .pakustad
   ┆• .planet
   ┆• .tafsirmimpi
   ┆• .jumlahuser
+  ┆• .buatcatatan
+  ┆• .lengkapikalimat
   ╰◙
   ╭◙  *Game Menu*
   ┆• .asahotak
@@ -1938,17 +1963,84 @@ let listMessage = { title: 'List Menu', sections }
   ┆• .tebakgenshin
   ┆• .tebakkata
   ┆• .tebaklirik
+  ┆• .tebaklagu
   ┆• .tebakbendera
   ┆• .tebakmakanan
   ┆• .tebaklogo
   ┆• .tebakgame
+  ┆• .tebakanime
+  ┆• .tebakhewan
+  ┆• .tebakinggris
+  ┆• .tebakjkt
+  ┆• .tebakjorok
+  ┆• .tebakkalimat
   ┆• .sambungkata
   ┆• .susunkata
   ┆• .siapakahaku
   ┆• .nyerah
   ╰◙
+  ╭◙  *AI Menu*
+  ┆• .ai
+  ┆• .gpt
+  ┆• .chatgpt
+  ┆• .gemini
+  ┆• .deepseek
+  ┆• .imagine
+  ┆• .nxlai
+  ┆• .sessionai
+  ┆• .resetai
+  ╰◙
   ╭◙  *Tools Media*
   ┆• .tourl
+  ┆• .upscale
+  ┆• .enhancefoto
+  ┆• .enhancevideo
+  ┆• .hdvideo
+  ┆• .blur
+  ┆• .readviewonce
+  ┆• .rvo
+  ┆• .web2apk
+  ┆• .webtoapk
+  ┆• .apkbuilder
+  ╰◙
+  ╭◙  *Anime Menu*
+  ┆• .anime
+  ┆• .animesearch
+  ┆• .animedetail
+  ┆• .animebeauty
+  ┆• .animedance
+  ┆• .nimegami
+  ┆• .neko
+  ┆• .kitsune
+  ┆• .catgirl
+  ┆• .cuddle
+  ┆• .hug
+  ┆• .kiss
+  ┆• .pat
+  ┆• .smile
+  ┆• .blush
+  ┆• .dance
+  ╰◙
+  ╭◙  *Islami Menu*
+  ┆• .islami
+  ┆• .adzan
+  ┆• .sholat
+  ┆• .jadwalsholat
+  ╰◙
+  ╭◙  *NSFW Menu*
+  ┆• .nsfw
+  ┆• .nsfwmenu
+  ┆• .nsfwlist
+  ┆• .nsfwhentai
+  ┆• .nsfwneko
+  ┆• .nsfwboobs
+  ┆• .nsfwass
+  ┆• .nsfwpussy
+  ┆• .nsfwecchi
+  ┆• .nsfwbj
+  ┆• .nsfwahegao
+  ┆• .nsfwtrap
+  ┆• .nsfwyuri
   ╰◙
   ╭◙ 𝗔𝘂𝘁𝗼 𝗠𝗲𝗻𝘂
   ┆• .autojpmswgc
@@ -1956,20 +2048,41 @@ let listMessage = { title: 'List Menu', sections }
   ┆• .autojpm
   ┆• .setjpm
   ┆• .autojoingc
+  ┆• .autojoingcfilter
+  ┆• .addjoinfilter
+  ┆• .deljoinfilter
+  ┆• .listjoinfilter
+  ┆• .autosavekontak
+  ┆• .savekontak
+  ┆• .savenomor
   ╰◙
   ╭◙ 𝗝𝗣𝗠 𝗠𝗲𝗻𝘂
   ┆• .jpm
   ┆• .jpm2
+  ┆• .jpm3
   ┆• .jpmtesti
   ┆• .jpmht
   ┆• .jpmch
+  ┆• .jaser
   ┆• .jaserht
+  ┆• .jedajaser
   ┆• .jpmswgc
   ┆• .stopjpm
+  ┆• .stoppush
   ┆• .jedajpm
   ┆• .bljpm
   ┆• .listbljpm
   ┆• .delbljpm
+  ╰◙
+  ╭◙  *Status WA Menu*
+  ┆• .upsw
+  ┆• .sendstatus
+  ┆• .swgc
+  ┆• .upswgc
+  ┆• .stopswgc
+  ┆• .blswgc
+  ┆• .listblswgc
+  ┆• .delblswgc
   ╰◙
   ╭◙  *Toko Menu*
   ┆• .listproduk
@@ -1991,6 +2104,13 @@ let listMessage = { title: 'List Menu', sections }
   ┆• .statusgrup
   ┆• .antilink
   ┆• .antilink2
+  ┆• .antibot
+  ┆• .antiswgc
+  ┆• .anticallgc
+  ┆• .antitoxic
+  ┆• .addtoxic
+  ┆• .deltoxic
+  ┆• .listtoxic
   ┆• .welcome
   ┆• .hidetag
   ┆• .kick
@@ -1999,7 +2119,9 @@ let listMessage = { title: 'List Menu', sections }
   ┆• .close
   ┆• .mute
   ┆• .unmute
+  ┆• .muteinfo
   ┆• .warn
+  ┆• .warnlist
   ┆• .resetwarn
   ╰◙
   ╭◙  *Owner Menu*
@@ -2007,10 +2129,22 @@ let listMessage = { title: 'List Menu', sections }
   ┆• .delowner
   ┆• .listowner
   ┆• .pushkontak
+  ┆• .pushkontak2
   ┆• .restart
   ┆• .public
   ┆• .self
   ┆• .backup
+  ┆• .botstatus
+  ┆• .statusbot
+  ┆• .speed
+  ┆• .ping
+  ┆• .owner
+  ┆• .sesi
+  ╰◙
+  ╭◙  *Misc*
+  ┆• .afk
+  ┆• .caratt
+  ┆• .status
   ╰◙`,
 
             hasMediaAttachment: true,
