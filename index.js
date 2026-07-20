@@ -426,7 +426,9 @@ try {
 	console.log(chalk.cyan(`[MODE] Bot dimulai dalam mode: ${NXL.public ? 'PUBLIC' : 'SELF'} (dari settings.js)`))
 }
 
+console.log(chalk.cyan('[DIAG-BOOT] Sebelum Solving()...'))
 await Solving(NXL, store)
+console.log(chalk.cyan('[DIAG-BOOT] Solving() selesai. Mendaftarkan messages.upsert...'))
 
 NXL.ev.on('messages.upsert', async (message) => {
   // [DIAG-SEMENTARA] Log tiap event masuk + nilai epoch. Hapus setelah masalah teratasi.
@@ -446,6 +448,7 @@ NXL.ev.on('messages.upsert', async (message) => {
     console.log(chalk.red(`[DIAG] >> MessagesUpsert melempar error ke handler: ${e?.message}`))
   }
 });
+console.log(chalk.cyan(`[DIAG-BOOT] messages.upsert TERPASANG \u2713 (myEpoch=${myEpoch})`))
 
 NXL.ev.on('contacts.update', (update) => {
 		for (let contact of update) {
