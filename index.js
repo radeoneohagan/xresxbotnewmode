@@ -143,6 +143,28 @@ async function prefetchAllGroups(conn) {
 	}
 }
 
+// [FIX RC-BUFFER] Root cause bot online tapi tak menerima pesan:
+// wileys (Socket/chats.js) memanggil ev.buffer() saat
+// (receivedPendingNotifications && !creds.myAppStateKeyId) lalu menandai
+// `needToFlushWithAppStateSync = true` — TETAPI flag itu DEAD CODE di wileys
+// (tak pernah dibaca), sehingga ev.flush() pasangannya TIDAK PERNAH dipanggil.
+// Akibatnya buffersInProgress macet >= 1 selamanya; event 'messages.upsert'
+// (BUFFERABLE) tertahan permanen, sedangkan 'connection.update' (non-buffer)
+// tetap jalan → bot ONLINE tapi tak pernah menerima pesan. Terjadi khusus pada
+// sesi hasil pairing baru (myAppStateKeyId belum tersimpan).
+// node_modules tak bisa dipatch permanen (hilang saat npm install), jadi buffer
+// yatim ini dikuras dari sisi aplikasi memakai API publik ev.isBuffering()/flush().
+// Aman: bila tidak sedang buffering, flush() adalah no-op; bounded agar tak loop.
+function drainStuckEventBuffer(conn) {
+	try {
+		const ev = conn && conn.ev
+		if (!ev || typeof ev.isBuffering !== 'function' || typeof ev.flush !== 'function') return
+		let guard = 0
+		while (ev.isBuffering() && guard++ < 30) ev.flush()
+		if (guard > 0) console.log(chalk.cyan(`[BUFFER] Event buffer dikuras (${guard}x) — messages.upsert kini mengalir.`))
+	} catch {}
+}
+
 async function getGroupsCached(conn) {
 	// [FIX H6] Tambah TTL 10 menit agar cache tidak stale selamanya
 	const CACHE_TTL = 10 * 60 * 1000
@@ -387,6 +409,7 @@ NXL.ev.on('connection.update', async (update) => {
 					global.botReady = true
 					console.log(chalk.cyan('[INFO] Bot siap menerima perintah JPM. (fallback 20s)'))
 
+					drainStuckEventBuffer(NXL)
 					prefetchAllGroups(NXL)
 				}
 			}, 20000)
@@ -400,6 +423,7 @@ NXL.ev.on('connection.update', async (update) => {
 				global.botReady = true
 				console.log(chalk.cyan('[INFO] Bot siap menerima perintah JPM.'))
 
+				drainStuckEventBuffer(NXL)
 				prefetchAllGroups(NXL)
 			}, 3000)
 		}
@@ -426,29 +450,17 @@ try {
 	console.log(chalk.cyan(`[MODE] Bot dimulai dalam mode: ${NXL.public ? 'PUBLIC' : 'SELF'} (dari settings.js)`))
 }
 
-console.log(chalk.cyan('[DIAG-BOOT] Sebelum Solving()...'))
 await Solving(NXL, store)
-console.log(chalk.cyan('[DIAG-BOOT] Solving() selesai. Mendaftarkan messages.upsert...'))
 
 NXL.ev.on('messages.upsert', async (message) => {
-  // [DIAG-SEMENTARA] Log tiap event masuk + nilai epoch. Hapus setelah masalah teratasi.
-  console.log(chalk.magenta(`[DIAG] messages.upsert diterima | type=${message?.type} count=${message?.messages?.length} | myEpoch=${myEpoch} _connEpoch=${_connEpoch}`))
   // [PATCH A] Abaikan pesan dari socket lama (epoch mismatch) agar tidak
   // terjadi double-processing / double-execute command (root cause RC-1).
-  if (myEpoch !== _connEpoch) {
-    console.log(chalk.red(`[DIAG] >> DIBUANG epoch guard: myEpoch=${myEpoch} != _connEpoch=${_connEpoch}`))
-    return
-  }
+  if (myEpoch !== _connEpoch) return
   markActivity()
   // [FIX H1] Antilink processing dipindahkan sepenuhnya ke case.js
   // untuk menghindari double-processing (duplicate delete/kick/warning)
-  try {
-    await MessagesUpsert(NXL, message, store);
-  } catch (e) {
-    console.log(chalk.red(`[DIAG] >> MessagesUpsert melempar error ke handler: ${e?.message}`))
-  }
+  await MessagesUpsert(NXL, message, store);
 });
-console.log(chalk.cyan(`[DIAG-BOOT] messages.upsert TERPASANG \u2713 (myEpoch=${myEpoch})`))
 
 NXL.ev.on('contacts.update', (update) => {
 		for (let contact of update) {
