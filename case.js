@@ -3548,15 +3548,18 @@ case "jasher": case "jpm": case "jaser": {
 
   // [PATCH B] Broadcast lewat engine terpadu. Delay acak anti-ban dipertahankan
   // via delayMs berupa function yang dievaluasi tiap iterasi.
+  // Siapkan payload SEKALI — Baileys akan generate link preview pada send pertama
+  // lalu reuse data preview yang sudah ada untuk seluruh send berikutnya (Fix14 pattern)
+  const messageContent = mediaPath
+    ? { image: fs.readFileSync(mediaPath), caption: text }
+    : { text }
+
   const _res = await runBroadcast({
     lockFlag: 'statusjpm',
     stopFlag: 'stopjpm',
     targets: filteredGroupIds,
     delayMs: () => (global.JedaJpm || 5000) + Math.floor(Math.random() * 3000) + 2000,
     sendOne: async (conn, groupId) => {
-      const messageContent = mediaPath
-        ? { image: fs.readFileSync(mediaPath), caption: text }
-        : { text }
       await conn.sendMessage(groupId, messageContent, { quoted: FakeChannelJpm })
     },
     onFirstSuccess: async (conn) => {
