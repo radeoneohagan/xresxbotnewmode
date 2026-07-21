@@ -707,7 +707,7 @@ const FakeChannelJpm = {
   message: {
     newsletterAdminInviteMessage: {
       newsletterJid: global.idsal || '123@newsletter',
-      caption: `Powered By ${global.ownername}.`,
+      caption: `${global.ownername} ${global.versibot}`,
       inviteExpiration: 0
     }
   }
@@ -3507,49 +3507,34 @@ case "jasher": case "jpm": case "jaser": {
   if (!text) return m.reply(`*Contoh :* ${command} pesannya & bisa dengan foto juga`)
   if (!global.botReady) return m.reply(`⏳ Bot baru saja reconnect, harap tunggu 20 detik lalu coba lagi.`)
 
-
-  let { key: _progressKey } = await NXL.sendMessage(m.chat, { text: `⏳ JPM\n📦 Mengambil data grup...` })
-
   let mediaPath
   if (/image/.test(mime)) {
     mediaPath = await NXL.downloadAndSaveMediaMessage(qmsg)
   }
 
+  // Ambil data grup dari cache (instant jika fresh, max 20s jika expired)
   let allGroups
   try {
     allGroups = await global.getGroupsCached()
   } catch (e) {
-    await NXL.sendMessage(m.chat, { text: `❌ Gagal mengambil daftar grup: ${e.message}\nBot mungkin belum siap, tunggu sebentar lalu coba lagi.`, edit: _progressKey })
-    return
+    return m.reply(`❌ Gagal mengambil daftar grup: ${e.message}`)
   }
   const groupIds = Object.keys(allGroups)
 
-
-  await NXL.sendMessage(m.chat, { text: `⏳ JPM\n📦 Data grup siap (${groupIds.length} grup)\n🔍 Memeriksa blacklist JPM...`, edit: _progressKey })
-
-
   let blacklist = []
-  try {
-    blacklist = loadBlacklistJpm()
-  } catch {
-    blacklist = []
-  }
-
+  try { blacklist = loadBlacklistJpm() } catch { blacklist = [] }
   const blacklistIds = blacklist.map(v => v.id)
   const filteredGroupIds = groupIds.filter(id => !blacklistIds.includes(id))
   const skipped = groupIds.length - filteredGroupIds.length
 
   const senderChat = m.chat
   const jenis = mediaPath ? "teks & foto" : "teks"
-  const jedaDetik = ((global.JedaJpm || 5000) / 1000).toFixed(1)
+  const jedaMs = global.JedaJpm || 4000
+  const jedaDetik = (jedaMs / 1000).toFixed(1)
 
+  await m.reply(`⏳ JPM ${jenis} dimulai!\n📨 Target: *${filteredGroupIds.length}* grup\n⏱️ Jeda: *${jedaDetik}* detik${skipped > 0 ? `\n⛔ Blacklist: *${skipped}* grup` : ''}`)
 
-  await NXL.sendMessage(m.chat, { text: `⏳ JPM\n📦 Data grup siap\n🔍 Blacklist diperiksa${skipped > 0 ? ` (${skipped} di-skip)` : ''}\n📨 Target: *${filteredGroupIds.length}* grup\n⏱️ Jeda: *${jedaDetik}* detik\n\n⏳ Mengirim ke grup pertama...`, edit: _progressKey })
-
-  // [PATCH B] Broadcast lewat engine terpadu. Delay acak anti-ban dipertahankan
-  // via delayMs berupa function yang dievaluasi tiap iterasi.
-  // Siapkan payload SEKALI — Baileys akan generate link preview pada send pertama
-  // lalu reuse data preview yang sudah ada untuk seluruh send berikutnya (Fix14 pattern)
+  // Siapkan payload SEKALI (Fix14 pattern — Baileys cache link preview setelah send pertama)
   const messageContent = mediaPath
     ? { image: fs.readFileSync(mediaPath), caption: text }
     : { text }
@@ -3558,12 +3543,9 @@ case "jasher": case "jpm": case "jaser": {
     lockFlag: 'statusjpm',
     stopFlag: 'stopjpm',
     targets: filteredGroupIds,
-    delayMs: () => (global.JedaJpm || 5000) + Math.floor(Math.random() * 3000) + 2000,
+    delayMs: () => jedaMs + Math.floor(Math.random() * 3000),
     sendOne: async (conn, groupId) => {
       await conn.sendMessage(groupId, messageContent, { quoted: FakeChannelJpm })
-    },
-    onFirstSuccess: async (conn) => {
-      await conn.sendMessage(m.chat, { text: `✅ JPM ${jenis} berjalan!\n🚀 Grup pertama terkirim\n📨 Target: *${filteredGroupIds.length}* grup\n⏱️ Jeda: *${jedaDetik}* detik`, edit: _progressKey })
     },
     cleanup: () => { if (mediaPath && fs.existsSync(mediaPath)) fs.unlinkSync(mediaPath) }
   })
