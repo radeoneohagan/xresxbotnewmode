@@ -3554,11 +3554,9 @@ case "jasher": case "jpm": case "jaser": {
     targets: filteredGroupIds,
     delayMs: () => (global.JedaJpm || 5000) + Math.floor(Math.random() * 3000) + 2000,
     sendOne: async (conn, groupId) => {
-      const antiBanId = Math.random().toString(36).substring(2, 8)
-      const uniqueText = `${text}\n\n_id: ${antiBanId}_`
       const messageContent = mediaPath
-        ? { image: fs.readFileSync(mediaPath), caption: uniqueText }
-        : { text: uniqueText }
+        ? { image: fs.readFileSync(mediaPath), caption: text }
+        : { text }
       await conn.sendMessage(groupId, messageContent, { quoted: FakeChannelJpm })
     },
     onFirstSuccess: async (conn) => {
