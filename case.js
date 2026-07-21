@@ -673,10 +673,12 @@ const getPPorangnya = async () => {
   return await reSize(pp, 300, 300)
 }
 const reply = (teks) => {
-// [PATCH E] F1-02: kembalikan promise (awaitable), pakai socket hidup, dan .catch
-// agar kegagalan kirim (mis. saat socket mati) tidak menjadi unhandled rejection.
+// [FIX CONTEXT-LEAK] Snapshot 'from' sudah diambil saat command mulai (closure).
+// Gunakan socket hidup; log error alih-alih swallow.
 const _c = (typeof global.getLiveConn === 'function' && global.getLiveConn()) || NXL
-return _c.sendMessage(from, { text : teks }, {quoted:m}).catch(() => {})
+return _c.sendMessage(from, { text : teks }, {quoted:m}).catch(err => {
+  console.error('[REPLY ERROR]', from, err?.message || err)
+})
 }
 const qtext = {key: {remoteJid: "status@broadcast", participant: "0@s.whatsapp.net"}, message: {"extendedTextMessage": {"text": `Powered By ${ownername}`}}}
 const FakeChannel = {
@@ -3649,9 +3651,10 @@ case "jpmht": {
     targets: filteredGroupIds,
     delayMs: () => global.JedaJpm || 5000,
     sendOne: async (conn, groupId) => {
-      global.messageJpm.mentions = (allGroups[groupId]?.participants || []).map(e => e.jid || e.id)
-      global.messageJpm.contextInfo = jpmAdReply
-      await conn.sendMessage(groupId, global.messageJpm, { quoted: FakeChannelJpm })
+      const _localMsg = { ...global.messageJpm }
+      _localMsg.mentions = (allGroups[groupId]?.participants || []).map(e => e.jid || e.id)
+      _localMsg.contextInfo = jpmAdReply
+      await conn.sendMessage(groupId, _localMsg, { quoted: FakeChannelJpm })
     },
     cleanup: () => { if (mediaPath && fs.existsSync(mediaPath)) fs.unlinkSync(mediaPath) }
   })
