@@ -26,6 +26,7 @@ global.mess = {
   private : 'Fitur ini hanya dapat digunakan ketika bot berada di private chat.',
   admin   : 'Fitur ini hanya dapat digunakan admin grup.',
   botadmin: 'Fitur ini hanya dapat digunakan ketika bot menjadi admin grup.',
+  wait    : 'Sedang memproses, harap tunggu...',
 }
 
 

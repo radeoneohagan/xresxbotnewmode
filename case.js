@@ -302,13 +302,6 @@ type: 'append'
 NXL.ev.emit('messages.upsert', msg)
 return
 }
-async function getRandomImg(jsonUrl) {
-  const res = await axios.get(jsonUrl);
-  const data = typeof res.data === "string" ? JSON.parse(res.data) : res.data;
-  const list = Array.isArray(data) ? data : Object.values(data).flat();
-  if (!list || list.length === 0) throw new Error("List kosong");
-  return list[Math.floor(Math.random() * list.length)];
-}
 if (m.isGroup && isAlreadyResponList(m.chat, body.toLowerCase(), db_respon_list)) {
 var get_data_respon = getDataResponList(m.chat, body.toLowerCase(), db_respon_list)
 if (get_data_respon.isImage === false) {
@@ -2298,7 +2291,7 @@ break
 case 'cekidch':
 case 'idch': {
     if (!text) return reply(`📌 Kirim link channel WhatsApp!\nContoh: ${global.waWeb}/channel/XXXX`)
-    if (!text.includes(`${global.waWeb}/channel/`)) return replytolak("❌ Link tautan tidak valid.")
+    if (!text.includes(`${global.waWeb}/channel/`)) return m.reply("❌ Link tautan tidak valid.")
 
     let result = text.split(`${global.waWeb}/channel/`)[1]
     let res = await NXL.newsletterMetadata("invite", result)
@@ -4065,7 +4058,7 @@ break
 
 case 'creategc':
 case 'creategrup': {
-  if (!isCreator) return onlyOwn()
+  if (!isCreator) return m.reply(mess.owner)
   if (!args.join(" ")) return m.reply(`Contoh: ${command} namagrup`)
   try {
     let cret = await NXL.groupCreate(args.join(" "), [])
@@ -4650,7 +4643,8 @@ case 'song': {
     let audioUrl = null
     try {
       const dlResult = await ytdl.ytmp3(videoUrl, 128)
-      audioUrl = dlResult?.download || dlResult?.url || dlResult?.audio || dlResult?.result?.download || null
+      audioUrl = dlResult?.download?.url || dlResult?.download || dlResult?.url || dlResult?.audio || dlResult?.result?.download?.url || dlResult?.result?.download || null
+      if (typeof audioUrl !== 'string') audioUrl = null
     } catch {}
 
     // Fallback: lib/scrape.js ytdl API (shinoa.us.kg)
@@ -4782,7 +4776,7 @@ case 'playch': {
 
     const opusBuffer = fs.readFileSync(tempOutput)
 
-    await NXL.sendMessage(global.channel, {
+    await NXL.sendMessage(global.idsal, {
       audio: opusBuffer,
       mimetype: "audio/ogg; codecs=opus",
       ptt: true,
@@ -4790,9 +4784,9 @@ case 'playch': {
         forwardingScore: 999,
         isForwarded: true,
         forwardedNewsletterMessageInfo: {
-          newsletterJid: global.channel,
+          newsletterJid: global.idsal,
           serverMessageId: 100,
-          newsletterName: global.channeln || global.botname
+          newsletterName: global.ownername || global.botname
         },
         externalAdReply: {
           title: data.title,
@@ -5048,8 +5042,7 @@ case 'igimg': {
 break;
 
 case 'removebg':
-case 'nobg':
-case 'upscale': {
+case 'nobg': {
   const q = m.quoted ? m.quoted : m
   const mime = (q.msg || q).mimetype || ''
   
@@ -6500,6 +6493,7 @@ case 'listjoinfilter': {
 break
 
 case 'blswgc': {
+  if (!isCreator) return m.reply(mess.owner)
   const list = loadBlacklistSwgc()
   if (list.includes(text)) return m.reply("Grup sudah ada di blacklist.")
   list.push(text)
@@ -6619,7 +6613,7 @@ case "setpromo": {
   if (isNaN(intervalMenit) || Number(intervalMenit) < 1) return m.reply("Interval minimal 1 menit.")
 
   let promo = {}
-  try { promo = JSON.parse(fs.readFileSync("./database/promo.json")) } catch { promo = { status: false } }
+  try { const _raw = JSON.parse(fs.readFileSync("./database/promo.json")); promo = (!_raw || Array.isArray(_raw) || typeof _raw !== 'object') ? {} : _raw } catch { promo = { status: false } }
   promo.target = target.toLowerCase()
   promo.interval = Number(intervalMenit) * 60000
   if (!fs.existsSync('./database')) fs.mkdirSync('./database', { recursive: true })
@@ -6632,9 +6626,11 @@ break
 case "autopromo": {
   if (!isCreator) return m.reply(mess.owner)
 
-  const promo = JSON.parse(fs.readFileSync("./database/promo.json"))
+  const _rawPromo = JSON.parse(fs.readFileSync("./database/promo.json"))
+  const promo = (!_rawPromo || Array.isArray(_rawPromo) || typeof _rawPromo !== 'object') ? {} : _rawPromo
   const produk = JSON.parse(fs.readFileSync("./database/produk.json"))
   if (produk.length < 1) return m.reply("Belum ada produk. Tambahkan dulu dengan .addproduk")
+  if (!promo.target || !promo.interval) return m.reply("Belum ada setting promo. Gunakan .setpromo dulu.")
 
   if (global.intervalPromo) {
     clearInterval(global.intervalPromo)
@@ -7637,7 +7633,7 @@ case "caklontong": case "tebakhero": case "family100": case "tebakgambar": case 
   if (global._gameSessions?.[m.chat]) return m.reply('⚠️ Game aktif! Ketik *.nyerah* untuk menyerah.')
   const _gFiles={caklontong:'./game/caklontong.json',family100:'./game/family100.json',tebakgambar:'./game/tebakgambar.json',tebaklogo:'./game/tebaklogo.json',tebakhero:'./game/tebakhero.json',tebakgenshin:'./game/tebakgenshin.json',tebakgame:'./game/tebakgame.json',tebakmakanan:'./game/tebakmakanan.json',tebakbendera:'./game/tebakbendera.json',tebaklagu:'./game/tebaklagu.json',sambungkata:'./game/sambungkata.json',tebaklirik:'./game/tebaklirik.json',asahotak:'./game/asahotak.json',lengkapikalimat:'./game/lengkapikalimat.json',siapakahaku:'./game/siapakahaku.json',susunkata:'./game/susunkata.json',tebakkata:'./game/tebakkata.json',tebakanime:'./game/tebakanime.json',tebakkalimat:'./game/tebakkalimat.json',tebakjorok:'./game/tebakjorok.json',tebakinggris:'./game/tebakinggris.json',tebakhewan:'./game/tebakhewan.json',tebakjkt:'./game/tebakjkt.json'}
   const _gf=_gFiles[command]; if(!_gf||!fs.existsSync(_gf)) return m.reply('❌ Data game tidak tersedia.')
-  try { const _gd=JSON.parse(fs.readFileSync(_gf,'utf-8')); if(!Array.isArray(_gd)||!_gd.length) return m.reply('❌ Data kosong.'); const _s=_gd[Math.floor(Math.random()*_gd.length)]; const _q=_s.soal||_s.deskripsi||'Tebak!'; const _ra=_s.jawaban||_s.name||_s.judul; if(!_ra) return m.reply('❌ Soal error.'); const _j=Array.isArray(_ra)?_ra.map(j=>String(j).toLowerCase()):[String(_ra).toLowerCase()]; const _cap=`🎮 *${command.toUpperCase()}*\n\n${_q}\n\n⏳ 60 detik!\n📌 Reply pesan ini!\nKetik *.nyerah* untuk menyerah.`; let _sm; if(_s.gambar||_s.img){_sm=await NXL.sendMessage(m.chat,{image:{url:_s.gambar||_s.img},caption:_cap},{quoted:m})}else{_sm=await NXL.sendMessage(m.chat,{text:_cap},{quoted:m})}; if(!global._gameSessions) global._gameSessions={}; global._gameSessions[m.chat]={jawaban:_j,messageId:_sm.key.id,timeout:setTimeout(()=>{if(global._gameSessions?.[m.chat]){const _gc=global.getLiveConn&&global.getLiveConn();if(_gc){try{_gc.sendMessage(m.chat,{text:`⏰ Waktu habis! Jawaban: *${_j.join(' / ')}*`})}catch{}}delete global._gameSessions[m.chat]}},60000)} } catch(e) { m.reply('❌ Error: '+e.message) }
+  try { const _gd=JSON.parse(fs.readFileSync(_gf,'utf-8')); if(!Array.isArray(_gd)||!_gd.length) return m.reply('❌ Data kosong.'); const _s=_gd[Math.floor(Math.random()*_gd.length)]; const _q=_s.soal||_s.deskripsi||'Tebak!'; const _ra=_s.jawaban||_s.name||_s.judul; if(!_ra) return m.reply('❌ Soal error.'); const _j=Array.isArray(_ra)?_ra.map(j=>String(j).toLowerCase()):[String(_ra).toLowerCase()]; const _cap=`🎮 *${command.toUpperCase()}*\n\n${command==='tebaklagu'?'Dengarkan audio di atas!':_q}\n\n⏳ 60 detik!\n📌 Reply pesan ini!\nKetik *.nyerah* untuk menyerah.`; let _sm; if(command==='tebaklagu'){await NXL.sendMessage(m.chat,{audio:{url:_q},mimetype:'audio/mpeg',ptt:true},{quoted:m});_sm=await NXL.sendMessage(m.chat,{text:_cap},{quoted:m})}else if(_s.gambar||_s.img){_sm=await NXL.sendMessage(m.chat,{image:{url:_s.gambar||_s.img},caption:_cap},{quoted:m})}else{_sm=await NXL.sendMessage(m.chat,{text:_cap},{quoted:m})}; if(!global._gameSessions) global._gameSessions={}; global._gameSessions[m.chat]={jawaban:_j,messageId:_sm.key.id,timeout:setTimeout(()=>{if(global._gameSessions?.[m.chat]){const _gc=global.getLiveConn&&global.getLiveConn();if(_gc){try{_gc.sendMessage(m.chat,{text:`⏰ Waktu habis! Jawaban: *${_j.join(' / ')}*`})}catch{}}delete global._gameSessions[m.chat]}},60000)} } catch(e) { m.reply('❌ Error: '+e.message) }
 }
 break
 
@@ -8181,17 +8177,16 @@ case "cekcase": {
 break;
 
 case 'anime': {
-  const imgList = {
-    neko: "http://localhost:3000/api/sfw",
-    anime: "http://localhost:3000/api/sfw",
-  };
   try {
-    if (!imgList[command]) return;
-    const url = await getRandomImg(imgList[command]);
-    await NXL.sendMessage(m.chat, { image: { url }, caption: `${command}` }, { quoted: m });
+    const sfwTypes = ['img/sfw/neko/gif', 'img/sfw/hug/gif', 'img/sfw/pat/gif', 'img/sfw/kiss/gif', 'img/sfw/smile/gif']
+    const pick = sfwTypes[Math.floor(Math.random() * sfwTypes.length)]
+    const { data: res } = await axios.get(`${global.apiPurrbot}/api/${pick}`, { timeout: 15000 })
+    const url = res?.link || res?.url
+    if (!url) return m.reply('❌ Gagal mengambil gambar anime.')
+    await NXL.sendMessage(m.chat, { image: { url }, caption: `🌸 *Anime SFW*` }, { quoted: m })
   } catch (e) {
     console.error(e);
-    await NXL.sendMessage(m.chat, { text: "Gagal ambil gambar, cek list-nya." }, { quoted: m });
+    await NXL.sendMessage(m.chat, { text: "❌ Gagal ambil gambar anime, coba lagi nanti." }, { quoted: m });
   }
   }
   break;
@@ -8200,26 +8195,30 @@ case 'github': {
   const user = args[0];
   if (!user) return NXL.sendMessage(m.chat, { text: "Masukkan username GitHub.\nContoh: .github torvalds" }, { quoted: m });
   try {
-    const { data } = await axios.get(`http://localhost:3000/api/github/${user}`);
+    const { data } = await axios.get(`https://api.github.com/users/${encodeURIComponent(user)}`, { timeout: 15000, headers: { 'User-Agent': 'WhatsApp-Bot/1.0' } });
     const teks = `
 *GitHub Stalker*
 
-Username : ${data.username}
-Nama     : ${data.nickname || "-"}
+Username : ${data.login}
+Nama     : ${data.name || "-"}
 Bio      : ${data.bio || "-"}
 Lokasi   : ${data.location || "-"}
 Email    : ${data.email || "-"}
 Blog     : ${data.blog || "-"}
 Perusahaan: ${data.company || "-"}
 
-Repo     : ${data.public_repo}
+Repo     : ${data.public_repos}
 Followers: ${data.followers}
 Following: ${data.following}
-Dibuat   : ${data.ceated_at}
+Dibuat   : ${data.created_at}
 `.trim();
-    await NXL.sendMessage(m.chat, { image: { url: data.profile_pic }, caption: teks }, { quoted: m });
+    await NXL.sendMessage(m.chat, { image: { url: data.avatar_url }, caption: teks }, { quoted: m });
   } catch (e) {
-    await NXL.sendMessage(m.chat, { text: "User tidak ditemukan." }, { quoted: m });
+    if (e?.response?.status === 403) {
+      await NXL.sendMessage(m.chat, { text: "⚠️ GitHub API sedang mencapai batas request, silakan coba beberapa menit lagi." }, { quoted: m });
+    } else {
+      await NXL.sendMessage(m.chat, { text: "❌ User tidak ditemukan atau API GitHub gagal." }, { quoted: m });
+    }
   }
   break;
 }
