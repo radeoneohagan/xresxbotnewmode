@@ -119,6 +119,276 @@ async function runBroadcast(opts) {
 
   return { rejected: false, sukses, gagal, index, total: targets.length, stopped }
 }
+
+// ============================================================================
+// [AUTOJOINGC SCHEDULER] — Queue-based join scheduler with human-like timing.
+// - Queue max 10 link. Validasi invite code sebelum enqueue.
+// - Delay: 90 menit + random 10-30 menit per siklus (berlaku untuk SEMUA hasil).
+// - Membership check via error response (tanpa request metadata tambahan).
+// - Persist queue ke file agar survive restart.
+// - Single-timer guard (tidak pernah ada 2 timer aktif bersamaan).
+// - Rate limit → random pause 30-60 menit.
+// - Notifikasi owner via WA (tanpa spam, 1x per kondisi penuh).
+// ============================================================================
+const AUTOJOIN_QUEUE_PATH = './database/autojoingc_queue.json'
+const AUTOJOIN_MAX_QUEUE = 10
+const AUTOJOIN_BASE_DELAY = 90 * 60 * 1000   // 90 menit
+const AUTOJOIN_RANDOM_MIN = 10 * 60 * 1000   // +10 menit
+const AUTOJOIN_RANDOM_MAX = 30 * 60 * 1000   // +30 menit
+const AUTOJOIN_RL_PAUSE_MIN = 30 * 60 * 1000 // rate limit pause min 30 menit
+const AUTOJOIN_RL_PAUSE_MAX = 60 * 60 * 1000 // rate limit pause max 60 menit
+
+let _autoJoinTimer = null
+let _autoJoinNextAt = 0
+let _ajStats = { success: 0, failed: 0, skipped: 0, lastReset: Date.now() }
+let _ajQueueFullNotified = false
+
+function _ajLoadQueue() {
+  try {
+    const d = JSON.parse(fs.readFileSync(AUTOJOIN_QUEUE_PATH, 'utf8'))
+    if (d && typeof d === 'object' && Array.isArray(d.queue)) return d
+    return { queue: [], nextAt: 0 }
+  } catch { return { queue: [], nextAt: 0 } }
+}
+function _ajSaveQueue(data) { safeWriteJSON(AUTOJOIN_QUEUE_PATH, data) }
+
+function _ajCalcDelay() {
+  return AUTOJOIN_BASE_DELAY + AUTOJOIN_RANDOM_MIN + Math.floor(Math.random() * (AUTOJOIN_RANDOM_MAX - AUTOJOIN_RANDOM_MIN))
+}
+
+function _ajCalcRateLimitPause() {
+  return AUTOJOIN_RL_PAUSE_MIN + Math.floor(Math.random() * (AUTOJOIN_RL_PAUSE_MAX - AUTOJOIN_RL_PAUSE_MIN))
+}
+
+function _ajFormatMs(milliseconds) {
+  const totalMin = Math.round(milliseconds / 60000)
+  const h = Math.floor(totalMin / 60)
+  const m = totalMin % 60
+  return h > 0 ? `${h} jam ${m} menit` : `${m} menit`
+}
+
+function _ajResetDailyStats() {
+  const now = Date.now()
+  if (now - _ajStats.lastReset > 24 * 60 * 60 * 1000) {
+    _ajStats = { success: 0, failed: 0, skipped: 0, lastReset: now }
+  }
+}
+
+async function _ajNotifyOwner(text) {
+  try {
+    const conn = (typeof global.getLiveConn === 'function') ? global.getLiveConn() : null
+    if (!conn) return
+    const ownerJid = (global.owner?.[0] || '').replace(/[^0-9]/g, '') + '@s.whatsapp.net'
+    if (!ownerJid || ownerJid === '@s.whatsapp.net') return
+    await conn.sendMessage(ownerJid, { text })
+  } catch {}
+}
+
+function _ajIsRateLimit(err) {
+  const msg = (err?.message || err?.toString() || '').toLowerCase()
+  const code = err?.data || err?.output?.statusCode || err?.statusCode || 0
+  return code === 429 || code === 503 ||
+    msg.includes('rate') || msg.includes('too many') ||
+    msg.includes('temporarily') || msg.includes('retry') ||
+    msg.includes('unavailable')
+}
+
+function autoJoinGcEnqueue(invite, source) {
+  if (!invite || typeof invite !== 'string') return 'invalid'
+  const data = _ajLoadQueue()
+
+  // Max queue 10
+  if (data.queue.length >= AUTOJOIN_MAX_QUEUE) {
+    console.log(`[AutoJoinGC] Queue penuh (${AUTOJOIN_MAX_QUEUE}), abaikan: ${invite}`)
+    // Notif owner hanya sekali per kondisi penuh
+    if (!_ajQueueFullNotified) {
+      _ajQueueFullNotified = true
+      const info = autoJoinGcGetStatus()
+      _ajNotifyOwner(
+        `⚠️ *[AUTO JOIN GC]*\n\n` +
+        `Queue: *${data.queue.length}/${AUTOJOIN_MAX_QUEUE}*\n\n` +
+        `Invite baru ditolak karena queue penuh.\n\n` +
+        `Next Join:\n${info.nextInFormatted !== '-' ? info.nextInFormatted + ' lagi.' : 'Scheduler tidak aktif.'}`
+      )
+    }
+    return 'full'
+  }
+
+  // Reset notif flag karena queue belum penuh
+  _ajQueueFullNotified = false
+
+  // Deduplicate: invite code sudah ada di queue
+  if (data.queue.some(item => item.invite === invite)) {
+    console.log(`[AutoJoinGC] Duplikat, abaikan: ${invite}`)
+    return 'duplicate'
+  }
+
+  // Tidak cek membership di sini — akan dicek saat scheduler benar-benar akan join
+  data.queue.push({ invite, time: Date.now() })
+  _ajSaveQueue(data)
+  console.log(`[AutoJoinGC] Enqueued: ${invite} | Queue: ${data.queue.length}/${AUTOJOIN_MAX_QUEUE}`)
+
+  // Mulai scheduler jika belum berjalan
+  autoJoinGcSchedulerStart()
+  return 'ok'
+}
+
+function autoJoinGcSchedulerStart() {
+  // Guard: hanya 1 timer aktif
+  if (_autoJoinTimer) return
+  const data = _ajLoadQueue()
+  if (data.queue.length === 0) return
+  if (!global.autoJoinGc) return
+
+  let delayMs
+
+  // Resume countdown jika ada nextAt yang masih di masa depan
+  if (data.nextAt && data.nextAt > Date.now()) {
+    delayMs = data.nextAt - Date.now()
+    _autoJoinNextAt = data.nextAt
+    console.log(`[AutoJoinGC] Resuming: ${_ajFormatMs(delayMs)} tersisa`)
+  } else {
+    // Hitung delay baru
+    delayMs = _ajCalcDelay()
+    _autoJoinNextAt = Date.now() + delayMs
+    data.nextAt = _autoJoinNextAt
+    _ajSaveQueue(data)
+  }
+
+  const randomPart = delayMs - AUTOJOIN_BASE_DELAY
+  console.log(`[AutoJoinGC] Next Join : ${_ajFormatMs(delayMs)}`)
+  console.log(`[AutoJoinGC] Random Delay : +${_ajFormatMs(randomPart > 0 ? randomPart : 0)}`)
+  console.log(`[AutoJoinGC] Queue : ${data.queue.length}/${AUTOJOIN_MAX_QUEUE}`)
+
+  _autoJoinTimer = setTimeout(() => _ajProcessNext(), delayMs)
+}
+
+async function _ajProcessNext() {
+  _autoJoinTimer = null
+  _autoJoinNextAt = 0
+
+  if (!global.autoJoinGc) return
+
+  const d = _ajLoadQueue()
+  if (d.queue.length === 0) {
+    d.nextAt = 0
+    _ajSaveQueue(d)
+    _ajNotifyOwner(
+      `✅ *[AUTO JOIN GC]*\n\n` +
+      `Semua queue telah selesai diproses.\n\n` +
+      `Success: ${_ajStats.success}\nFailed: ${_ajStats.failed}\nSkipped: ${_ajStats.skipped}\n\n` +
+      `Menunggu link baru.`
+    )
+    return
+  }
+
+  // Ambil item pertama (FIFO)
+  const item = d.queue.shift()
+  d.nextAt = 0
+  _ajSaveQueue(d)
+
+  _ajResetDailyStats()
+
+  // Cek koneksi
+  const conn = (typeof global.getLiveConn === 'function') ? global.getLiveConn() : null
+  if (!conn) {
+    console.log(`[AutoJoinGC] ⚠️ Skip (no connection): ${item.invite}`)
+    _ajStats.skipped++
+    _ajScheduleNextCycle()
+    return
+  }
+
+  // Langsung coba join — jika sudah member, error akan di-catch
+  try {
+    await conn.groupAcceptInvite(item.invite)
+    console.log(`[AutoJoinGC] ✅ Joined: ${item.invite}`)
+    _ajStats.success++
+  } catch (err) {
+    const errMsg = (err?.message || err?.toString() || '').toLowerCase()
+    console.log(`[AutoJoinGC] ❌ Gagal: ${item.invite} — ${errMsg}`)
+
+    // Cek apakah sudah member (WhatsApp return error spesifik)
+    if (errMsg.includes('already') || errMsg.includes('participant') || errMsg.includes('member')) {
+      console.log(`[AutoJoinGC] ⏭️ Skipped (sudah member): ${item.invite}`)
+      _ajStats.skipped++
+      _ajScheduleNextCycle()
+      return
+    }
+
+    // Cek apakah rate limit
+    if (_ajIsRateLimit(err)) {
+      const pauseMs = _ajCalcRateLimitPause()
+      console.log(`[AutoJoinGC] ⚠️ Rate limit! Pause ${_ajFormatMs(pauseMs)}`)
+      _ajStats.failed++
+      _ajNotifyOwner(
+        `⚠️ *[AUTO JOIN GC]*\n\n` +
+        `WhatsApp mendeteksi Rate Limit.\n\n` +
+        `Scheduler dipause.\n\n` +
+        `Cooldown:\n${_ajFormatMs(pauseMs)}.`
+      )
+      const pauseData = _ajLoadQueue()
+      _autoJoinNextAt = Date.now() + pauseMs
+      pauseData.nextAt = _autoJoinNextAt
+      _ajSaveQueue(pauseData)
+      _autoJoinTimer = setTimeout(() => _ajProcessNext(), pauseMs)
+      return
+    }
+
+    // Gagal biasa (expired/invalid/penuh/disbanded)
+    _ajStats.skipped++
+  }
+
+  // Setiap siklus → delay normal sebelum berikutnya (baik sukses, gagal, atau skip)
+  _ajScheduleNextCycle()
+}
+
+function _ajScheduleNextCycle() {
+  if (_ajLoadQueue().queue.length > 0 && global.autoJoinGc) {
+    autoJoinGcSchedulerStart()
+  } else if (_ajLoadQueue().queue.length === 0) {
+    _ajNotifyOwner(
+      `✅ *[AUTO JOIN GC]*\n\n` +
+      `Semua queue telah selesai diproses.\n\n` +
+      `Success: ${_ajStats.success}\nFailed: ${_ajStats.failed}\nSkipped: ${_ajStats.skipped}\n\n` +
+      `Menunggu link baru.`
+    )
+  }
+}
+
+function autoJoinGcSchedulerStop() {
+  if (_autoJoinTimer) {
+    clearTimeout(_autoJoinTimer)
+    _autoJoinTimer = null
+  }
+  _autoJoinNextAt = 0
+}
+
+function autoJoinGcGetStatus() {
+  _ajResetDailyStats()
+  const data = _ajLoadQueue()
+  const running = !!_autoJoinTimer
+  const nextIn = _autoJoinNextAt > Date.now() ? _autoJoinNextAt - Date.now() : 0
+  return {
+    queueSize: data.queue.length,
+    maxQueue: AUTOJOIN_MAX_QUEUE,
+    running,
+    nextIn,
+    nextInFormatted: nextIn > 0 ? _ajFormatMs(nextIn) : '-',
+    queue: data.queue,
+    stats: { success: _ajStats.success, failed: _ajStats.failed, skipped: _ajStats.skipped }
+  }
+}
+
+// Boot: resume scheduler setelah settings ter-load
+;(function _ajBootResume() {
+  setTimeout(() => {
+    if (global.autoJoinGc && _ajLoadQueue().queue.length > 0) {
+      console.log('[AutoJoinGC] Boot: resume scheduler...')
+      autoJoinGcSchedulerStart()
+    }
+  }, 10000)
+})()
+
 const yts = require('yt-search');
 const ytdl = require('@vreden/youtube_scraper');
 const axios = require('axios')
@@ -453,6 +723,19 @@ const FakeChannelJpm = {
   }
 }
 
+// [JPM PREVIEW] contextInfo untuk link preview WhatsApp Business pada pesan JPM.
+// Menghasilkan card preview dengan title, body, sourceUrl, dan badge business.
+const jpmAdReply = {
+  externalAdReply: {
+    showAdAttribution: true,
+    title: global.ownername || 'WhatsApp Business',
+    body: 'Business Account',
+    sourceUrl: `${global.waMe}/${global.owner?.[0] || ''}`,
+    mediaType: 1,
+    renderLargerThumbnail: true
+  }
+}
+
 const fatext = {
 key: {
 participant: `0@s.whatsapp.net`,
@@ -720,40 +1003,30 @@ console.log(chalk.black(chalk.bgWhite('[ PESAN ]')), chalk.black(chalk.bgGreen(n
 if (!isCmd && global.autoJoinGc && budy && budy.includes('chat.whatsapp.com/')) {
   const linksFound = budy.split(/\s+|\n/).filter(l => l.includes('chat.whatsapp.com/'))
   if (linksFound.length) {
-    ;(async () => {
+    // Filter check (tetap dipertahankan)
+    const filterAktif = !!global.autoJoinGcFilter
+    const filterList = filterAktif ? loadJoinFilter() : []
+    const sumberJid = m.isGroup ? from : sender
 
-      const filterAktif = !!global.autoJoinGcFilter
-      const filterList = filterAktif ? loadJoinFilter() : []
-
-
-      const sumberJid = m.isGroup ? from : sender
-
-      if (filterAktif) {
-
-        const senderNum = sender.replace(/@.*$/, '')
-        const allowed = filterList.some(v =>
-          v.id === sumberJid ||
-          v.id.replace(/@.*$/, '') === senderNum
-        )
-        if (!allowed) return
-      }
-
-      for (const link of linksFound) {
-        // [PATCH A] Pakai socket hidup saat eksekusi, bukan closure lama.
-        // Jika koneksi mati (reconnect di tengah proses), hentikan IIFE detached
-        // ini agar tidak memanggil groupAcceptInvite pada socket mati (root cause RC-2/T2-06).
-        const _conn = global.getLiveConn ? global.getLiveConn() : NXL
-        if (!_conn) break
-        const code = link.split('chat.whatsapp.com/')[1]?.split('?')[0]?.trim()
-        if (!code) continue
-        try {
-          await _conn.groupAcceptInvite(code)
-        } catch (err) {
-
+    if (filterAktif) {
+      const senderNum = sender.replace(/@.*$/, '')
+      const allowed = filterList.some(v =>
+        v.id === sumberJid ||
+        v.id.replace(/@.*$/, '') === senderNum
+      )
+      if (!allowed) { /* tidak diizinkan oleh filter */ }
+      else {
+        for (const link of linksFound) {
+          const invite = link.split('chat.whatsapp.com/')[1]?.split(/[?\s#]/)[0]?.trim()
+          if (invite && invite.length >= 10) autoJoinGcEnqueue(invite, sumberJid)
         }
-        await new Promise(r => setTimeout(r, global.autoJoinGcDelay || 5000))
       }
-    })()
+    } else {
+      for (const link of linksFound) {
+        const invite = link.split('chat.whatsapp.com/')[1]?.split(/[?\s#]/)[0]?.trim()
+        if (invite && invite.length >= 10) autoJoinGcEnqueue(invite, sumberJid)
+      }
+    }
   }
 }
 
@@ -3307,8 +3580,8 @@ case "jasher": case "jpm": case "jaser": {
       const antiBanId = Math.random().toString(36).substring(2, 8)
       const uniqueText = `${text}\n\n_id: ${antiBanId}_`
       const messageContent = mediaPath
-        ? { image: fs.readFileSync(mediaPath), caption: uniqueText }
-        : { text: uniqueText }
+        ? { image: fs.readFileSync(mediaPath), caption: uniqueText, contextInfo: jpmAdReply }
+        : { text: uniqueText, contextInfo: jpmAdReply }
       await conn.sendMessage(groupId, messageContent, { quoted: FakeChannelJpm })
     },
     onFirstSuccess: async (conn) => {
@@ -3377,6 +3650,7 @@ case "jpmht": {
     delayMs: () => global.JedaJpm || 5000,
     sendOne: async (conn, groupId) => {
       global.messageJpm.mentions = (allGroups[groupId]?.participants || []).map(e => e.jid || e.id)
+      global.messageJpm.contextInfo = jpmAdReply
       await conn.sendMessage(groupId, global.messageJpm, { quoted: FakeChannelJpm })
     },
     cleanup: () => { if (mediaPath && fs.existsSync(mediaPath)) fs.unlinkSync(mediaPath) }
@@ -6071,7 +6345,7 @@ case 'autojpm': {
     stopFlag: 'stopjpm',
     targets: groupIdsJpm,
     delayMs: () => global.JedaJpm || 4000,
-    sendOne: async (conn, gid) => { await conn.sendMessage(gid, jpmC, { quoted: FakeChannelJpm }) }
+    sendOne: async (conn, gid) => { await conn.sendMessage(gid, { ...jpmC, contextInfo: jpmAdReply }, { quoted: FakeChannelJpm }) }
   })
 
   if (_res.rejected) return m.reply(`⚠️ JPM sedang berjalan, tunggu sampai selesai atau hentikan dengan .stopjpm`)
@@ -6185,8 +6459,8 @@ case 'jaserht': {
     sendOne: async (conn, gid) => {
       const members = allGroupsHt[gid]?.participants?.map(e => e.jid || e.id) || []
       const htContent = jaserhtPath
-        ? { image: fs.readFileSync(jaserhtPath), caption: text, mentions: members }
-        : { text, mentions: members }
+        ? { image: fs.readFileSync(jaserhtPath), caption: text, mentions: members, contextInfo: jpmAdReply }
+        : { text, mentions: members, contextInfo: jpmAdReply }
       await conn.sendMessage(gid, htContent, { quoted: FakeChannelJpm })
     },
     cleanup: () => { if (jaserhtPath && fs.existsSync(jaserhtPath)) fs.unlinkSync(jaserhtPath) }
@@ -6247,36 +6521,52 @@ break
 case 'autojoingc': {
   if (!isCreator) return reply(mess.owner)
 
-
   if (global.autoJoinGc === undefined) global.autoJoinGc = false
-  if (global.autoJoinGcDelay === undefined) global.autoJoinGcDelay = 5000
   if (global.autoJoinGcFilter === undefined) global.autoJoinGcFilter = false
 
   const subCmd = args[0]?.toLowerCase()
 
-
-  if (subCmd === 'delay') {
-    const jeda = parseInt(args[1])
-    if (isNaN(jeda) || jeda < 1000) return m.reply(`> [ NXL BOT ]\n\`PENGGUNAAN SALAH\`\n*Minimal delay 1000ms*\n*Contoh: .autojoingc delay 5000*\n<>`)
-    global.autoJoinGcDelay = jeda
-    return m.reply(`> [ NXL BOT ]\n\`BERHASIL\`\n*Delay autojoingc diset ke ${jeda}ms (${jeda/1000} detik)*\n<>`)
-  }
-
-
   if (subCmd === 'on') {
     if (global.autoJoinGc) return m.reply(`> [ NXL BOT ]\n\`INFO\`\n*AutoJoin GC sudah ON*\n<>`)
     global.autoJoinGc = true
-    return m.reply(`> [ NXL BOT ]\n\`BERHASIL\`\n*AutoJoin GC dinyalakan*\n_Bot akan otomatis join saat ada yang kirim link grup_\n_Delay: ${global.autoJoinGcDelay}ms_\n<>`)
+    autoJoinGcSchedulerStart()
+    return m.reply(`> [ NXL BOT ]\n\`BERHASIL\`\n*AutoJoin GC dinyalakan*\n_Jeda: ~100-120 menit per join_\n<>`)
   }
   if (subCmd === 'off') {
     if (!global.autoJoinGc) return m.reply(`> [ NXL BOT ]\n\`INFO\`\n*AutoJoin GC sudah OFF*\n<>`)
     global.autoJoinGc = false
-    return m.reply(`> [ NXL BOT ]\n\`BERHASIL\`\n*AutoJoin GC dimatikan*\n<>`)
+    autoJoinGcSchedulerStop()
+    return m.reply(`> [ NXL BOT ]\n\`BERHASIL\`\n*AutoJoin GC dimatikan*\n_Scheduler dihentikan. Queue tetap tersimpan._\n<>`)
+  }
+  if (subCmd === 'clear') {
+    _ajSaveQueue({ queue: [], nextAt: 0 })
+    autoJoinGcSchedulerStop()
+    return m.reply(`> [ NXL BOT ]\n\`BERHASIL\`\n*Queue AutoJoinGC dikosongkan*\n<>`)
   }
 
-
+  // Tampilkan status lengkap
   const statusNow = global.autoJoinGc ? '🟢 ON' : '🔴 OFF'
   const filterNow = global.autoJoinGcFilter ? '🟢 ON' : '🔴 OFF'
+  const info = autoJoinGcGetStatus()
+
+  let queueList = ''
+  if (info.queue.length > 0) {
+    queueList = `\n│\n│  *Sedang Menunggu:*\n`
+    for (let i = 0; i < info.queue.length; i++) {
+      queueList += `│  ${i + 1}. ${info.queue[i].invite}\n`
+    }
+  }
+
+  const nextJoinText = info.running && info.nextIn > 0
+    ? `\n│\n│  *Next Join:*\n│  ${info.nextInFormatted} lagi`
+    : info.queueSize > 0
+      ? `\n│\n│  *Scheduler:* PAUSED (autojoingc off)`
+      : ''
+
+  const statsText = `\n│\n│  *Processed Today:*\n│  ✅ Success: ${info.stats.success}\n│  ❌ Failed: ${info.stats.failed}\n│  ⏭️ Skipped: ${info.stats.skipped}`
+
+  const bodyText = `╭─「 *⚙️ AUTO JOIN GC* 」\n│\n│  Auto Join : *${statusNow}*\n│  Filter    : *${filterNow}*\n│\n│  Queue     : *${info.queueSize}/${info.maxQueue}*${queueList}${nextJoinText}${statsText}\n│\n│  _Jeda: 90 menit + random 10-30 menit_\n│\n│  *.autojoingc on/off*\n│  *.autojoingc clear*\n│  *.autojoingcfilter on/off*\n│  *.addjoinfilter* • *.deljoinfilter*\n╰─「 *${wm}* 」`
+
   try {
     const panelMsg = {
       interactiveMessage: proto.Message.InteractiveMessage.create({
@@ -6288,33 +6578,20 @@ case 'autojoingc': {
             serverMessageId: -1
           }
         },
-        body: proto.Message.InteractiveMessage.Body.create({
-          text: `╭─「 *⚙️ AUTO JOIN GC* 」\n│\n│  Status AutoJoin : *${statusNow}*\n│  Join Filter     : *${filterNow}*\n│  Delay           : *${global.autoJoinGcDelay}ms (${global.autoJoinGcDelay/1000}dtk)*\n│\n│  _Bot otomatis join saat ada yang_\n│  _mengirim link grup WhatsApp_\n│\n│  Ubah delay:\n│  *.autojoingc delay 5000*\n│\n│  Kelola whitelist:\n│  *.autojoingcfilter on/off*\n│  *.addjoinfilter* • *.deljoinfilter*\n│  *.listjoinfilter*\n╰─「 *${wm}* 」`
-        }),
-        footer: proto.Message.InteractiveMessage.Footer.create({
-          text: `© ${wm}`
-        }),
-        header: proto.Message.InteractiveMessage.Header.create({
-          title: `⚙️ Auto Join GC`,
-          hasMediaAttachment: false
-        }),
+        body: proto.Message.InteractiveMessage.Body.create({ text: bodyText }),
+        footer: proto.Message.InteractiveMessage.Footer.create({ text: `© ${wm}` }),
+        header: proto.Message.InteractiveMessage.Header.create({ title: `⚙️ Auto Join GC`, hasMediaAttachment: false }),
         nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.create({
           buttons: [
-            {
-              name: 'quick_reply',
-              buttonParamsJson: JSON.stringify({ display_text: '🟢 ON', id: '.autojoingc on' })
-            },
-            {
-              name: 'quick_reply',
-              buttonParamsJson: JSON.stringify({ display_text: '🔴 OFF', id: '.autojoingc off' })
-            }
+            { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: '🟢 ON', id: '.autojoingc on' }) },
+            { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: '🔴 OFF', id: '.autojoingc off' }) }
           ]
         })
       })
     }
     await NXL.relayMessage(m.chat, panelMsg, {})
   } catch (e) {
-    m.reply(`> [ NXL BOT ]\n\`AUTO JOIN GC\`\n*Status AutoJoin : ${statusNow}*\n*Join Filter      : ${filterNow}*\n*Delay            : ${global.autoJoinGcDelay}ms*\n\n_Ketik .autojoingc on/off_\n_Ubah delay: .autojoingc delay 5000_\n_Filter: .autojoingcfilter on/off_\n<>`)
+    m.reply(bodyText)
   }
 }
 break
@@ -7695,7 +7972,7 @@ case "jpm2": {
     stopFlag: 'stopjpm',
     targets: jpm2Filtered,
     delayMs: () => global.JedaJpm || 5000,
-    sendOne: async (conn, gid) => { await conn.sendMessage(gid, jpm2Content, { quoted: FakeChannelJpm }) },
+    sendOne: async (conn, gid) => { await conn.sendMessage(gid, { ...jpm2Content, contextInfo: jpmAdReply }, { quoted: FakeChannelJpm }) },
     cleanup: () => { if (jpm2Media && fs.existsSync(jpm2Media)) fs.unlinkSync(jpm2Media) }
   })
 
@@ -7749,7 +8026,7 @@ case "jpmtesti": {
       await conn.sendMessage(gid, {
         image: fs.readFileSync(testiMedia),
         caption: text,
-        contextInfo: { isForwarded: true, mentionedJid: [m.sender], businessMessageForwardInfo: { businessOwnerJid: botNumber } }
+        contextInfo: { ...jpmAdReply, isForwarded: true, mentionedJid: [m.sender], businessMessageForwardInfo: { businessOwnerJid: botNumber } }
       }, { quoted: FakeChannelJpm })
     },
     cleanup: () => { if (fs.existsSync(testiMedia)) fs.unlinkSync(testiMedia) }
