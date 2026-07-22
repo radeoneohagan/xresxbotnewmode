@@ -7200,26 +7200,28 @@ case "warn": {
   if (!m.isGroup) return m.reply("Command ini hanya untuk grup.")
   if (!isAdmins && !isCreator) return m.reply("Hanya admin / owner yang bisa warn.")
 
-  const toSWA = (jid) => {
-    if (!jid) return null
+  // [WARN] Resolusi identifier apa pun (lid/id/jid/nomor) menjadi participant +
+  // JID nomor asli (@s.whatsapp.net). SELALU utamakan JID kanonik nomor asli,
+  // tidak pernah menyimpan angka LID mentah. Identitas ini identik dengan yang
+  // dihitung blok auto-delete warn sehingga key simpan == key baca.
+  const resolveMember = (jid) => {
+    if (!jid) return { jid: null, part: null }
     const rawNum = jid.replace(/@.*$/, '')
+    let part = null
     if (participants && participants.length) {
-      // [FIX WARN] Cocokkan target dengan SEMUA identifier participant (lid/id/jid)
-      // tanpa peduli suffix, lalu kembalikan JID kanonik (.jid = nomor asli).
-      // Ini WAJIB identik dengan resolusi pada blok auto-delete warn agar key
-      // penyimpanan == key pengecekan (sebelumnya angka LID tersimpan sebagai
-      // @s.whatsapp.net sehingga tidak pernah cocok saat enforcement).
-      const found = participants.find(p =>
+      part = participants.find(p =>
         (p.lid && p.lid.replace(/@.*$/, '') === rawNum) ||
         (p.id  && p.id.replace(/@.*$/, '')  === rawNum) ||
         (p.jid && p.jid.replace(/@.*$/, '') === rawNum)
-      )
-      if (found) {
-        if (found.jid) return found.jid.replace(/@.*$/, '') + '@s.whatsapp.net'
-        if (found.id && found.id.includes('@s.whatsapp.net')) return found.id
-      }
+      ) || null
     }
-    return rawNum + '@s.whatsapp.net'
+    let phone = null
+    if (part) {
+      if (part.jid && part.jid.includes('@s.whatsapp.net')) phone = part.jid.replace(/@.*$/, '') + '@s.whatsapp.net'
+      else if (part.id && part.id.includes('@s.whatsapp.net')) phone = part.id.replace(/@.*$/, '') + '@s.whatsapp.net'
+    }
+    if (!phone) phone = rawNum + '@s.whatsapp.net'
+    return { jid: phone, part }
   }
 
   let rawTarget = null
@@ -7232,15 +7234,15 @@ case "warn": {
     if (mentionMatch) rawTarget = mentionMatch[1] + '@s.whatsapp.net'
   }
 
-  if (participants && participants.length) {
-  }
-
-  const warnTarget = toSWA(rawTarget)
+  const { jid: warnTarget, part: _targetPart } = resolveMember(rawTarget)
   console.log(`[WARN CMD] raw:${rawTarget} → resolved:${warnTarget}`)
 
   if (!warnTarget) return m.reply(`Cara pakai:\n- Reply pesan member: .warn\n- Tag member: .warn @nomor`)
-  if (warnTarget.split('@')[0] === _botJid.split('@')[0]) return m.reply("Tidak bisa warn bot sendiri.")
-  if (!isCreator && groupAdmins.includes(warnTarget)) return m.reply("Tidak bisa warn sesama admin.")
+  const _wtNum = warnTarget.split('@')[0]
+  if (_wtNum === _botJid.split('@')[0]) return m.reply("Tidak bisa warn bot sendiri.")
+  // [PLAN A] Owner & admin kebal warn — tolak dengan pesan jelas (bukan simpan diam-diam).
+  if ((global.owner || []).some(o => o.replace(/[^0-9]/g, '') === _wtNum)) return m.reply("Tidak bisa warn owner bot.")
+  if (_targetPart && (_targetPart.admin === 'admin' || _targetPart.admin === 'superadmin')) return m.reply("Tidak bisa warn admin grup.")
 
   let warnPath = './database/warndata.json'
   let warnData = {}
@@ -7268,7 +7270,8 @@ case "warn": {
     }, { quoted: m })
 
     try {
-      await NXL.groupParticipantsUpdate(m.chat, [warnTarget], "remove")
+      // Kick memakai id participant asli (yang dikenali WA) bila ada, fallback ke JID.
+      await NXL.groupParticipantsUpdate(m.chat, [_targetPart?.id || warnTarget], "remove")
     } catch (e) {
       await m.reply("Gagal kick: " + e.message)
     }
