@@ -3558,8 +3558,7 @@ case "jasher": case "jpm": case "jaser": {
     return null
   }
 
-  const initialCount = Object.keys(allGroups).filter(id => !blacklistIds.includes(id)).length
-  await m.reply(`⏳ JPM ${jenis} dimulai!\n📨 Target: *${initialCount}* grup\n⏱️ Jeda: *${(global.JedaJpm || 4000) / 1000}* detik${global.allGroupsFetching ? ' (prefetch berjalan...)' : ''}`)
+  await m.reply(`⏳ JPM ${jenis} dimulai!\n⏱️ Jeda: *${(global.JedaJpm || 4000) / 1000}* detik`)
 
   while (true) {
     if (global.stopjpm) { delete global.stopjpm; break }
@@ -3588,6 +3587,9 @@ case "jasher": case "jpm": case "jaser": {
   }
 
   const skipped = Object.keys(global.allGroupsCache || {}).filter(id => blacklistIds.includes(id)).length
+  const totalAll = Object.keys(global.allGroupsCache || {}).length
+  const targetTotal = Math.max(0, totalAll - skipped)
+  const gagalTerlewat = Math.max(0, targetTotal - successCount)
   if (mediaPath && fs.existsSync(mediaPath)) fs.unlinkSync(mediaPath)
   delete global.statusjpm
 
@@ -3596,7 +3598,7 @@ case "jasher": case "jpm": case "jaser": {
     global.prefetchAllGroups().catch(() => {})
   }
   await NXL.sendMessage(senderChat, {
-    text: `✅ JPM ${jenis} selesai!\nTerkirim ke *${successCount}/${seenIds.size}* grup.\n${skipped > 0 ? `⛔ Di-skip blacklist: *${skipped}* grup` : ''}`
+    text: `✅ JPM ${jenis} selesai!\n📤 Terkirim: *${successCount}* dari *${targetTotal}* grup\n❌ Gagal/terlewat: *${gagalTerlewat}* grup\n⛔ Blacklist dilewati: *${skipped}* grup`
   }, { quoted: m })
 }
 break
