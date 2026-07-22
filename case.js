@@ -2120,71 +2120,161 @@ let listMessage = { title: 'List Menu', sections }
 ╚═❏
 
 
-  ╭◙  *Other Menu*
-  ┆• .pushkontak
-  ┆• .pushkontak2
-  ┆• .jedapush
-  ┆• .jedajpm
-  ┆• .jedajaser
-  ┆• .setjeda
-  ┆• .jpm
-  ┆• .bljpm
-  ┆• .listbljpm
-  ┆• .delbljpm
+  ╭◙  *Menu*
+  ┆• .menu
+  ┆• .allmenu
+  ┆• .ownermenu
+  ┆• .nsfwmenu
+  ┆• .menuislami
+  ┆• .listcase
+  ┆• .cekcase
+  ╰◙
+  ╭◙  *Info & Status*
+  ┆• .ping
+  ┆• .speed
+  ┆• .statusbot
+  ┆• .botstatus
+  ┆• .status
+  ┆• .sesi
+  ┆• .jumlahuser
+  ┆• .iduser
+  ┆• .cekiduser
+  ┆• .idch
   ┆• .cekidch
   ┆• .cekidgc
-  ┆• .cekiduser
   ┆• .cekch
+  ┆• .debugquoted
+  ┆• .teslink
   ╰◙
-  ╭◙  *Main Menu*
-  ┆• .igdownload
-  ┆• .removebg
-  ┆• .suarateks
-  ┆• .stt
-  ┆• .emojimix
-  ┆• .pinterest
-  ┆• .ttsearch
-  ┆• .ttstalk
-  ┆• .tiktoksearch
+  ╭◙  *AI Menu*
+  ┆• .ai
+  ┆• .nxlai
+  ┆• .gpt
+  ┆• .chatgpt
+  ┆• .gemini
+  ┆• .deepseek
+  ┆• .imagine
   ┆• .gimage
-  ┆• .bratvid
-  ┆• .ssweb
-  ┆• .ffstalk
+  ┆• .sessionai
+  ┆• .resetai
+  ╰◙
+  ╭◙  *Downloader Menu*
   ┆• .tiktok
+  ┆• .tt
   ┆• .douyin
-  ┆• .brat
+  ┆• .dy
+  ┆• .twitter
+  ┆• .threads
+  ┆• .threadsdl
+  ┆• .instagram
+  ┆• .ig
+  ┆• .igdl
+  ┆• .igdownload
+  ┆• .igimage
+  ┆• .igimg
+  ┆• .igvid
+  ┆• .igvideo
+  ┆• .gdrive
+  ┆• .gitclone
   ┆• .sfile
+  ┆• .xdl
+  ┆• .save
+  ┆• .pin
   ┆• .play
   ┆• .playch
+  ┆• .song
   ┆• .music
   ┆• .musicgen
   ╰◙
-  ╭◙  *Search Menu*
+  ╭◙  *Search & Stalk Menu*
   ┆• .yts
   ┆• .npmjs
+  ┆• .github
+  ┆• .searchcode
+  ┆• .pinterest
+  ┆• .ttsearch
+  ┆• .tiktoksearch
   ┆• .igstalk
   ┆• .tiktokstalk
+  ┆• .ttstalk
+  ┆• .ffstalk
   ┆• .stalkroblox
-  ┆• .cekgempa
   ┆• .cekcuaca
+  ┆• .cekgempa
   ┆• .cekkalender
   ┆• .infolibur
   ┆• .liburnasional
-  ┆• .searchcode
-  ┆• .github
   ╰◙
-  ╭◙  *Download Menu*
-  ┆• .twitter
-  ┆• .threads
-  ┆• .gdrive
-  ┆• .gitclone
-  ┆• .save
-  ┆• .pin
+  ╭◙  *Sticker & Media Tools*
+  ┆• .s
+  ┆• .sticker
+  ┆• .sgif
+  ┆• .brat
+  ┆• .brat2
+  ┆• .bratfoto
+  ┆• .bratvid
+  ┆• .bratvideo
+  ┆• .emojimix
+  ┆• .mix
+  ┆• .tourl
+  ┆• .upscale
+  ┆• .perbesar
+  ┆• .enhancefoto
+  ┆• .enhancevideo
+  ┆• .hdfoto
+  ┆• .hdgambar
+  ┆• .hdvideo
+  ┆• .blur
+  ┆• .removebg
+  ┆• .nobg
+  ┆• .readviewonce
+  ┆• .rvo
+  ┆• .toaudio
+  ┆• .toaudio3
+  ┆• .tomp3
+  ┆• .stt
+  ┆• .suarateks
+  ┆• .ssweb
+  ┆• .web2apk
+  ┆• .webtoapk
+  ┆• .apkbuilder
+  ╰◙
+  ╭◙  *Anime Menu*
+  ┆• .anime
+  ┆• .animesearch
+  ┆• .animedetail
+  ┆• .animebeauty
+  ┆• .animedance
+  ┆• .nimegami
+  ┆• .neko
+  ┆• .kitsune
+  ┆• .catgirl
+  ┆• .waifu
+  ┆• .waifucantik
+  ┆• .quotesanime
+  ┆• .sfw
+  ┆• .sfwrandom
+  ┆• .sfwwaifu
+  ┆• .cuddle
+  ┆• .hug
+  ┆• .kiss
+  ┆• .pat
+  ┆• .smile
+  ┆• .blush
+  ┆• .dance
   ╰◙
   ╭◙  *Fun Menu*
   ┆• .artinama
   ┆• .fitnah
   ┆• .fakereply
+  ┆• .buatcatatan
+  ┆• .meme
+  ┆• .faktadunia
+  ┆• .faktaunik
+  ┆• .planet
+  ┆• .pakustad
+  ┆• .tafsirmimpi
+  ┆• .kecocokanpasangan
   ┆• .cekbeban
   ┆• .cekbucin
   ┆• .cekgay
@@ -2197,19 +2287,6 @@ let listMessage = { title: 'List Menu', sections }
   ┆• .ceksange
   ┆• .cekstress
   ┆• .cekwibu
-  ┆• .kecocokanpasangan
-  ┆• .faktadunia
-  ┆• .faktaunik
-  ┆• .meme
-  ┆• .waifu
-  ┆• .waifucantik
-  ┆• .quotesanime
-  ┆• .pakustad
-  ┆• .planet
-  ┆• .tafsirmimpi
-  ┆• .jumlahuser
-  ┆• .buatcatatan
-  ┆• .lengkapikalimat
   ╰◙
   ╭◙  *Game Menu*
   ┆• .asahotak
@@ -2234,49 +2311,8 @@ let listMessage = { title: 'List Menu', sections }
   ┆• .sambungkata
   ┆• .susunkata
   ┆• .siapakahaku
+  ┆• .lengkapikalimat
   ┆• .nyerah
-  ╰◙
-  ╭◙  *AI Menu*
-  ┆• .ai
-  ┆• .gpt
-  ┆• .chatgpt
-  ┆• .gemini
-  ┆• .deepseek
-  ┆• .imagine
-  ┆• .nxlai
-  ┆• .sessionai
-  ┆• .resetai
-  ╰◙
-  ╭◙  *Tools Media*
-  ┆• .tourl
-  ┆• .upscale
-  ┆• .enhancefoto
-  ┆• .enhancevideo
-  ┆• .hdvideo
-  ┆• .blur
-  ┆• .readviewonce
-  ┆• .rvo
-  ┆• .web2apk
-  ┆• .webtoapk
-  ┆• .apkbuilder
-  ╰◙
-  ╭◙  *Anime Menu*
-  ┆• .anime
-  ┆• .animesearch
-  ┆• .animedetail
-  ┆• .animebeauty
-  ┆• .animedance
-  ┆• .nimegami
-  ┆• .neko
-  ┆• .kitsune
-  ┆• .catgirl
-  ┆• .cuddle
-  ┆• .hug
-  ┆• .kiss
-  ┆• .pat
-  ┆• .smile
-  ┆• .blush
-  ┆• .dance
   ╰◙
   ╭◙  *Islami Menu*
   ┆• .islami
@@ -2284,9 +2320,128 @@ let listMessage = { title: 'List Menu', sections }
   ┆• .sholat
   ┆• .jadwalsholat
   ╰◙
+  ╭◙  *JPM Menu*
+  ┆• .jpm
+  ┆• .jaser
+  ┆• .jasher
+  ┆• .jpm2
+  ┆• .jpm3
+  ┆• .jpmtesti
+  ┆• .jpmht
+  ┆• .jpmch
+  ┆• .jaserht
+  ┆• .jedajaser
+  ┆• .jedajpm
+  ┆• .setjeda
+  ┆• .setjpm
+  ┆• .autojpm
+  ┆• .stopjpm
+  ┆• .bljpm
+  ┆• .blacklistjpm
+  ┆• .listbljpm
+  ┆• .delbljpm
+  ╰◙
+  ╭◙  *SWGC / Status Grup*
+  ┆• .swgc
+  ┆• .swgroup
+  ┆• .swgrup
+  ┆• .jpmswgc
+  ┆• .autojpmswgc
+  ┆• .setautoswgc
+  ┆• .stopswgc
+  ┆• .blswgc
+  ┆• .listblswgc
+  ┆• .delblswgc
+  ╰◙
+  ╭◙  *Status WA Menu*
+  ┆• .upsw
+  ┆• .upswgc
+  ┆• .uploadsw
+  ┆• .upstatus
+  ┆• .upstatuswa
+  ┆• .sendstatus
+  ╰◙
+  ╭◙  *Auto & Kontak Menu*
+  ┆• .autojoingc
+  ┆• .autojoingcfilter
+  ┆• .addjoinfilter
+  ┆• .deljoinfilter
+  ┆• .listjoinfilter
+  ┆• .autosavekontak
+  ┆• .savekontak
+  ┆• .savenomor
+  ┆• .svkontak
+  ┆• .pushkontak
+  ┆• .pushkontak2
+  ┆• .puskontak
+  ┆• .puskontak2
+  ┆• .stoppush
+  ┆• .stoppus
+  ┆• .stoppushkontak
+  ┆• .jedapush
+  ╰◙
+  ╭◙  *Group Menu*
+  ┆• .creategc
+  ┆• .creategrup
+  ┆• .joingc
+  ┆• .leavegc
+  ┆• .listgc
+  ┆• .listgroup
+  ┆• .listgrup
+  ┆• .tagadmin
+  ┆• .hidetag
+  ┆• .ht
+  ┆• .kick
+  ┆• .kik
+  ┆• .add
+  ┆• .open
+  ┆• .opengc
+  ┆• .close
+  ┆• .closegc
+  ┆• .mute
+  ┆• .mute-toggle
+  ┆• .unmute
+  ┆• .muteinfo
+  ┆• .welcome
+  ┆• .notifgrup
+  ┆• .statusgrup
+  ┆• .antilink
+  ┆• .antilink2
+  ┆• .antibot
+  ┆• .antiswgc
+  ┆• .anticallgc
+  ┆• .antitoxic
+  ┆• .addtoxic
+  ┆• .deltoxic
+  ┆• .listtoxic
+  ┆• .warn
+  ┆• .warnlist
+  ┆• .resetwarn
+  ╰◙
+  ╭◙  *Toko Menu*
+  ┆• .listproduk
+  ┆• .addproduk
+  ┆• .delproduk
+  ┆• .autopromo
+  ┆• .setpromo
+  ┆• .payment
+  ┆• .proses
+  ┆• .ps
+  ┆• .don
+  ┆• .done
+  ┆• .done1
+  ┆• .done2
+  ┆• .done3
+  ┆• .done4
+  ┆• .done5
+  ┆• .done6
+  ┆• .done7
+  ┆• .done8
+  ┆• .done9
+  ┆• .done10
+  ╰◙
   ╭◙  *NSFW Menu*
   ┆• .nsfw
-  ┆• .nsfwmenu
   ┆• .nsfwlist
   ┆• .nsfwhentai
   ┆• .nsfwneko
@@ -2299,109 +2454,23 @@ let listMessage = { title: 'List Menu', sections }
   ┆• .nsfwtrap
   ┆• .nsfwyuri
   ╰◙
-  ╭◙ 𝗔𝘂𝘁𝗼 𝗠𝗲𝗻𝘂
-  ┆• .autojpmswgc
-  ┆• .setautoswgc
-  ┆• .autojpm
-  ┆• .setjpm
-  ┆• .autojoingc
-  ┆• .autojoingcfilter
-  ┆• .addjoinfilter
-  ┆• .deljoinfilter
-  ┆• .listjoinfilter
-  ┆• .autosavekontak
-  ┆• .savekontak
-  ┆• .savenomor
-  ╰◙
-  ╭◙ 𝗝𝗣𝗠 𝗠𝗲𝗻𝘂
-  ┆• .jpm
-  ┆• .jpm2
-  ┆• .jpm3
-  ┆• .jpmtesti
-  ┆• .jpmht
-  ┆• .jpmch
-  ┆• .jaser
-  ┆• .jaserht
-  ┆• .jedajaser
-  ┆• .jpmswgc
-  ┆• .stopjpm
-  ┆• .stoppush
-  ┆• .jedajpm
-  ┆• .bljpm
-  ┆• .listbljpm
-  ┆• .delbljpm
-  ╰◙
-  ╭◙  *Status WA Menu*
-  ┆• .upsw
-  ┆• .sendstatus
-  ┆• .swgc
-  ┆• .upswgc
-  ┆• .stopswgc
-  ┆• .blswgc
-  ┆• .listblswgc
-  ┆• .delblswgc
-  ╰◙
-  ╭◙  *Toko Menu*
-  ┆• .listproduk
-  ┆• .addproduk
-  ┆• .delproduk
-  ┆• .autopromo
-  ┆• .setpromo
-  ┆• .payment
-  ┆• .done
-  ┆• .proses
-  ╰◙
-  ╭◙  *Group Menu*
-  ┆• .tagadmin
-  ┆• .creategc
-  ┆• .leavegc
-  ┆• .joingc
-  ┆• .listgrup
-  ┆• .notifgrup
-  ┆• .statusgrup
-  ┆• .antilink
-  ┆• .antilink2
-  ┆• .antibot
-  ┆• .antiswgc
-  ┆• .anticallgc
-  ┆• .antitoxic
-  ┆• .addtoxic
-  ┆• .deltoxic
-  ┆• .listtoxic
-  ┆• .welcome
-  ┆• .hidetag
-  ┆• .kick
-  ┆• .add
-  ┆• .open
-  ┆• .close
-  ┆• .mute
-  ┆• .unmute
-  ┆• .muteinfo
-  ┆• .warn
-  ┆• .warnlist
-  ┆• .resetwarn
-  ╰◙
   ╭◙  *Owner Menu*
+  ┆• .owner
+  ┆• .own
   ┆• .addowner
+  ┆• .addown
   ┆• .delowner
+  ┆• .delown
   ┆• .listowner
-  ┆• .pushkontak
-  ┆• .pushkontak2
-  ┆• .restart
+  ┆• .listown
   ┆• .public
   ┆• .self
+  ┆• .restart
   ┆• .backup
-  ┆• .botstatus
-  ┆• .statusbot
-  ┆• .speed
-  ┆• .ping
-  ┆• .owner
-  ┆• .sesi
-  ╰◙
-  ╭◙  *Misc*
+  ┆• .backupsc
+  ┆• .bck
   ┆• .afk
   ┆• .caratt
-  ┆• .status
   ╰◙`,
 
             hasMediaAttachment: true,
