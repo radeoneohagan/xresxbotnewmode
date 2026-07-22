@@ -957,7 +957,22 @@ if (_msgId && !_isAppend) {
 // [PERF-FIX] Log pesan HANYA setelah dedup lolos — memastikan setiap pesan
 // hanya mencetak log SATU kali di panel Pterodactyl (fix double/triple log).
 if (m.message) {
-console.log(chalk.black(chalk.bgWhite('[ PESAN ]')), chalk.black(chalk.bgGreen(new Date().toLocaleTimeString())), chalk.black(chalk.bgBlue(budy || m.mtype || '')) + '\n' + chalk.magenta('=> Dari'), chalk.green(pushname || 'Unknown'), chalk.yellow(m.sender || '') + '\n' + chalk.blueBright('=> Di'), chalk.green(m.isGroup ? (pushname || 'Group Chat') : 'Private Chat') + ' ' + chalk.cyan(from || ''));
+  // [LOG] Hanya cetak pesan yang benar-benar ada isinya (teks atau media).
+  // Pesan sistem/kosong dilewati agar tidak ada kolom kosong (spam) di console.
+  let _isi = (budy && String(budy).trim()) ? String(budy).trim() : ''
+  if (!_isi && m.mtype && m.mtype !== 'conversation' && m.mtype !== 'extendedTextMessage') {
+    _isi = '[' + String(m.mtype).replace(/Message$/, '') + ']'
+  }
+  if (_isi) {
+    const _tempat = m.isGroup ? (groupName || 'Group Chat') : 'Private Chat'
+    console.log(
+      chalk.black(chalk.bgWhite('[ PESAN ]')),
+      chalk.black(chalk.bgGreen(new Date().toLocaleTimeString())),
+      chalk.black(chalk.bgBlue(' ' + _isi + ' ')),
+      '\n' + chalk.magenta('=> Dari'), chalk.green(pushname || 'Unknown'), chalk.yellow(m.sender || ''),
+      '\n' + chalk.blueBright('=> Di'), chalk.green(_tempat), chalk.cyan(from || '')
+    )
+  }
 }
 
 if (!isCmd && global.autoJoinGc && budy && budy.includes('chat.whatsapp.com/')) {
@@ -9257,6 +9272,6 @@ if (stdout) return reply(stdout)
 }
 
 } catch (err) {
-console.log(util.format(err))
+console.error(chalk.black(chalk.bgRed(' [ ERROR ] ')), chalk.red(util.format(err?.stack || err?.message || err)))
 }
 }
