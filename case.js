@@ -680,7 +680,7 @@ return _c.sendMessage(from, { text : teks }, {quoted:m}).catch(err => {
   console.error('[REPLY ERROR]', from, err?.message || err)
 })
 }
-const qtext = {key: {remoteJid: "status@broadcast", participant: "0@s.whatsapp.net"}, message: {"extendedTextMessage": {"text": `Powered By ${ownername}`}}}
+const qtext = {key: {remoteJid: "status@broadcast", participant: "0@s.whatsapp.net"}, message: {"extendedTextMessage": {"text": `${global.ownername} ${global.versibot}`}}}
 const FakeChannel = {
   key: {
     remoteJid: 'status@broadcast',
@@ -690,7 +690,7 @@ const FakeChannel = {
   message: {
     newsletterAdminInviteMessage: {
       newsletterJid: '123@newsletter',
-      caption: `Powered By ${global.ownername}.`,
+      caption: `${global.ownername} ${global.versibot}`,
       inviteExpiration: 0
     }
   }
