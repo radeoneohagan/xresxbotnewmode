@@ -690,7 +690,7 @@ const FakeChannel = {
   message: {
     newsletterAdminInviteMessage: {
       newsletterJid: '123@newsletter',
-      caption: `${global.ownername} ${global.versibot}`,
+      caption: `Powered By ${global.ownername}.`,
       inviteExpiration: 0
     }
   }
