@@ -129,58 +129,60 @@ setInterval(() => {
 
 async function prefetchAllGroups(conn) {
 	try {
-		console.log(chalk.cyan('[PREFETCH] Memuat daftar grup ke cache...'))
+		console.log(chalk.cyan('[CACHE] Memuat daftar grup...'))
 		const groups = await Promise.race([
 			conn.groupFetchAllParticipating(),
 			new Promise((_, rej) => setTimeout(() => rej(new Error('prefetch timeout')), 30000))
 		])
 		global.allGroupsCache = groups
 		global.allGroupsCacheTime = Date.now()
-		console.log(chalk.cyan(`[PREFETCH] Cache grup siap: ${Object.keys(groups).length} grup.`))
+		console.log(chalk.cyan(`[CACHE] Grup siap: ${Object.keys(groups).length} grup.`))
+		// Mulai background worker setelah cache pertama terisi
+		startGroupCacheWorker()
 	} catch (e) {
-		console.log(chalk.yellow(`[PREFETCH] Gagal memuat cache grup: ${e.message}`))
-
+		console.log(chalk.yellow(`[CACHE] Gagal memuat grup: ${e.message}`))
 	}
 }
 
+// ============================================================================
+// [BACKGROUND CACHE WORKER] Refresh cache grup secara periodik (setiap 5 menit).
+// JPM TIDAK PERNAH melakukan fetch — hanya membaca cache yang sudah tersedia.
+// Worker berjalan otomatis setelah prefetch pertama selesai saat startup.
+// ============================================================================
+const GROUP_CACHE_REFRESH_INTERVAL = 5 * 60 * 1000  // 5 menit
+let _groupCacheWorkerTimer = null
+
+function startGroupCacheWorker() {
+	if (_groupCacheWorkerTimer) return  // sudah berjalan
+	_groupCacheWorkerTimer = setInterval(() => {
+		if (!global.botReady || !global._nxlConn || !global._connAlive) return
+		if (global._groupCacheRefreshing) return
+		global._groupCacheRefreshing = true
+		global._nxlConn.groupFetchAllParticipating()
+			.then(groups => {
+				// Atomic swap: ganti seluruh reference cache sekaligus
+				global.allGroupsCache = groups
+				global.allGroupsCacheTime = Date.now()
+			})
+			.catch(() => {})
+			.finally(() => { global._groupCacheRefreshing = false })
+	}, GROUP_CACHE_REFRESH_INTERVAL)
+}
+
+function stopGroupCacheWorker() {
+	if (_groupCacheWorkerTimer) {
+		clearInterval(_groupCacheWorkerTimer)
+		_groupCacheWorkerTimer = null
+	}
+}
+
+// getGroupsCached: JPM READ-ONLY — tidak pernah fetch sendiri
 async function getGroupsCached(conn) {
-	// [STALE-WHILE-REVALIDATE] Jika cache ADA, langsung return (0ms).
-	// Jika cache expired → trigger background refresh, tapi TETAP return cache lama.
-	// JPM langsung mulai tanpa menunggu fetch selesai.
-	const CACHE_TTL = 10 * 60 * 1000
-
-	const hasCache = global.allGroupsCache && Object.keys(global.allGroupsCache).length > 0
-	const isFresh = hasCache && global.allGroupsCacheTime && (Date.now() - global.allGroupsCacheTime) < CACHE_TTL
-
-	if (isFresh) {
-		// Cache masih fresh — return instan
+	if (global.allGroupsCache && Object.keys(global.allGroupsCache).length > 0) {
 		return global.allGroupsCache
 	}
-
-	if (hasCache) {
-		// Cache ada tapi expired — return langsung, refresh di background
-		if (!global._groupCacheRefreshing) {
-			global._groupCacheRefreshing = true
-			conn.groupFetchAllParticipating()
-				.then(groups => {
-					global.allGroupsCache = groups
-					global.allGroupsCacheTime = Date.now()
-					console.log(`[CACHE] Grup di-refresh background: ${Object.keys(groups).length} grup`)
-				})
-				.catch(e => console.error('[CACHE] Background refresh gagal:', e?.message || e))
-				.finally(() => { global._groupCacheRefreshing = false })
-		}
-		return global.allGroupsCache
-	}
-
-	// Tidak ada cache sama sekali — harus fetch (pertama kali / setelah restart)
-	const groups = await Promise.race([
-		conn.groupFetchAllParticipating(),
-		new Promise((_, rej) => setTimeout(() => rej(new Error('groupFetchAllParticipating timeout')), 20000))
-	])
-	global.allGroupsCache = groups
-	global.allGroupsCacheTime = Date.now()
-	return groups
+	// Cache belum ada (bot baru restart, prefetch belum selesai)
+	throw new Error('Cache grup belum siap. Tunggu beberapa detik setelah bot online.')
 }
 
 // [PATCH A] Hentikan seluruh SIDE-EFFECT yang terikat pada satu sesi koneksi.
@@ -196,6 +198,9 @@ function stopConnectionScopedWork() {
 	global.stopjpm = true
 	global.stopswgc = true
 	global.stoppush = true
+
+	// Hentikan background cache worker saat disconnect
+	stopGroupCacheWorker()
 
 	// Bersihkan timer readiness (connection-scoped).
 	try { if (global._botReadyTimer) { clearTimeout(global._botReadyTimer); global._botReadyTimer = null } } catch {}
@@ -859,12 +864,14 @@ setInterval(() => {
 			global.pendingGroupsRefresh = true
 			return
 		}
+		// Background cache worker sudah menangani refresh setiap 5 menit.
+		// Interval 6 jam ini hanya sebagai fallback jika worker mati.
 		const age = Date.now() - (global.allGroupsCacheTime || 0)
-		if (age > 6 * 60 * 60 * 1000) {
+		if (age > 30 * 60 * 1000) {
 			prefetchAllGroups(global._nxlConn).catch(() => {})
 		}
 	}
-}, 6 * 60 * 60 * 1000)
+}, 30 * 60 * 1000)
 
 process.on('uncaughtException', (err) => {
 	console.error(chalk.red('[UNCAUGHT]'), err?.message || err)
