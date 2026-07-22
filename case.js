@@ -59,6 +59,20 @@ function readHotJson(filePath, fallback) {
 //
 // Return: { rejected, sukses, gagal, index, total, stopped }
 // ============================================================================
+// [JPM ANTI-SPAM] Catat ID pesan JPM yang terkirim. Saat pesan dihapus admin/bot
+// di grup lain, WhatsApp bisa mengirim retry-receipt yang membuat Baileys mengirim
+// ULANG pesan yang sama (spam). getMessage (index.js) menolak resend untuk ID yang
+// tercatat di sini -> setiap varian JPM cukup 1x per grup. Khusus JPM saja.
+function _trackJpmMsg(sent) {
+  const _id = sent?.key?.id || (typeof sent === 'string' ? sent : null)
+  if (_id) {
+    if (!global._jpmMsgIds) global._jpmMsgIds = new Set()
+    global._jpmMsgIds.add(_id)
+    if (global._jpmMsgIds.size > 5000) global._jpmMsgIds.clear()
+  }
+  return sent
+}
+
 async function runBroadcast(opts) {
   const {
     lockFlag = null,
@@ -3366,7 +3380,7 @@ case "jpmch": {
     stopFlag: 'stopjpm',
     targets: channelList,
     delayMs: () => global.JedaJpm || 5000,
-    sendOne: async (conn, chId) => { await conn.sendMessage(chId, global.messageJpm) },
+    sendOne: async (conn, chId) => { _trackJpmMsg(await conn.sendMessage(chId, global.messageJpm)) },
     cleanup: () => { if (mediaPath && fs.existsSync(mediaPath)) fs.unlinkSync(mediaPath) }
   })
 
@@ -3481,6 +3495,7 @@ const cards = rawSlides.map((slideText) => ({
     sendOne: async (conn, groupId) => {
       const carouselMsg = await buildCarousel(groupId)
       await conn.relayMessage(groupId, carouselMsg.message, { messageId: carouselMsg.key.id })
+      _trackJpmMsg(carouselMsg)
     },
     onFirstSuccess: async (conn) => {
       await conn.sendMessage(m.chat, { text: `✅ JPM Slide berjalan!\n🚀 Grup pertama terkirim\n📨 Target: *${filteredGroupIds.length}* grup\n⏱️ Jeda: *${jedaDetik}* detik`, edit: _pKey })
@@ -3560,16 +3575,7 @@ case "jasher": case "jpm": case "jaser": {
 
     seenIds.add(groupId)
     try {
-      const _jpmSent = await NXL.sendMessage(groupId, global.messageJpm, { quoted: FakeChannel })
-      // [JPM ANTI-SPAM] Catat ID pesan JPM. Saat pesan ini dihapus admin/bot di
-      // grup lain, WhatsApp bisa mengirim retry-receipt yang membuat Baileys
-      // mengirim ULANG pesan yang sama (spam). Dengan menandai ID-nya, getMessage
-      // akan menolak resend -> JPM cukup 1x per grup lalu lanjut grup berikutnya.
-      if (_jpmSent?.key?.id) {
-        if (!global._jpmMsgIds) global._jpmMsgIds = new Set()
-        global._jpmMsgIds.add(_jpmSent.key.id)
-        if (global._jpmMsgIds.size > 5000) global._jpmMsgIds.clear()
-      }
+      _trackJpmMsg(await NXL.sendMessage(groupId, global.messageJpm, { quoted: FakeChannel }))
       successCount++
     } catch (err) {
       console.error(`[JPM] Gagal kirim ke ${groupId}:`, err?.message || err)
@@ -3645,7 +3651,7 @@ case "jpmht": {
       const _localMsg = { ...global.messageJpm }
       _localMsg.mentions = (allGroups[groupId]?.participants || []).map(e => e.jid || e.id)
       // preview via quoted FakeChannel
-      await conn.sendMessage(groupId, _localMsg, { quoted: FakeChannel })
+      _trackJpmMsg(await conn.sendMessage(groupId, _localMsg, { quoted: FakeChannel }))
     },
     cleanup: () => { if (mediaPath && fs.existsSync(mediaPath)) fs.unlinkSync(mediaPath) }
   })
@@ -6339,7 +6345,7 @@ case 'autojpm': {
     stopFlag: 'stopjpm',
     targets: groupIdsJpm,
     delayMs: () => global.JedaJpm || 4000,
-    sendOne: async (conn, gid) => { await conn.sendMessage(gid, jpmC, { quoted: FakeChannel }) }
+    sendOne: async (conn, gid) => { _trackJpmMsg(await conn.sendMessage(gid, jpmC, { quoted: FakeChannel })) }
   })
 
   if (_res.rejected) return m.reply(`⚠️ JPM sedang berjalan, tunggu sampai selesai atau hentikan dengan .stopjpm`)
@@ -6455,7 +6461,7 @@ case 'jaserht': {
       const htContent = jaserhtPath
         ? { image: fs.readFileSync(jaserhtPath), caption: text, mentions: members }
         : { text, mentions: members }
-      await conn.sendMessage(gid, htContent, { quoted: FakeChannel })
+      _trackJpmMsg(await conn.sendMessage(gid, htContent, { quoted: FakeChannel }))
     },
     cleanup: () => { if (jaserhtPath && fs.existsSync(jaserhtPath)) fs.unlinkSync(jaserhtPath) }
   })
@@ -7977,7 +7983,7 @@ case "jpm2": {
     stopFlag: 'stopjpm',
     targets: jpm2Filtered,
     delayMs: () => global.JedaJpm || 5000,
-    sendOne: async (conn, gid) => { await conn.sendMessage(gid, jpm2Content, { quoted: FakeChannel }) },
+    sendOne: async (conn, gid) => { _trackJpmMsg(await conn.sendMessage(gid, jpm2Content, { quoted: FakeChannel })) },
     cleanup: () => { if (jpm2Media && fs.existsSync(jpm2Media)) fs.unlinkSync(jpm2Media) }
   })
 
@@ -8028,11 +8034,11 @@ case "jpmtesti": {
     targets: testiFiltered,
     delayMs: () => global.JedaJpm || 5000,
     sendOne: async (conn, gid) => {
-      await conn.sendMessage(gid, {
+      _trackJpmMsg(await conn.sendMessage(gid, {
         image: fs.readFileSync(testiMedia),
         caption: text,
         contextInfo: { isForwarded: true, mentionedJid: [m.sender], businessMessageForwardInfo: { businessOwnerJid: botNumber } }
-      }, { quoted: FakeChannel })
+      }, { quoted: FakeChannel }))
     },
     cleanup: () => { if (fs.existsSync(testiMedia)) fs.unlinkSync(testiMedia) }
   })
