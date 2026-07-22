@@ -631,7 +631,6 @@ if (!global.gambar1Cache) {
   try { global.gambar1Cache = fs.readFileSync('./lib/image/image.jpg') } catch { global.gambar1Cache = null }
 }
 const gambar1 = global.gambar1Cache
-const time = moment(Date.now()).tz('Asia/Jakarta').locale('id').format('HH:mm:ss z')
 let user = [m.sender]
 if (m.isGroup && !m.key.fromMe && !isCreator && !isAdmins) {
   try {
@@ -923,7 +922,9 @@ function saveJoinFilter(list) {
   fs.writeFileSync(JOINFILTER_PATH, JSON.stringify(list, null, 2))
 }
 
-const timee = moment().tz('Asia/Jakarta').format('HH:mm:ss')
+// [PERF] Hindari moment-timezone per pesan (lambat). WIB = UTC+7 (tanpa DST),
+// jadi cukup geser 7 jam lalu ambil "HH:mm:ss" — hasil identik untuk perbandingan.
+const timee = new Date(Date.now() + 25200000).toISOString().slice(11, 19)
 if(timee < "23:59:00"){
 var waktuucapan = 'Selamat Malam 🌃'}
 if(timee < "19:00:00"){
