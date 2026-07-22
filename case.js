@@ -3558,7 +3558,9 @@ case "jasher": case "jpm": case "jaser": {
     return null
   }
 
-  await m.reply(`⏳ JPM ${jenis} dimulai!\n⏱️ Jeda: *${(global.JedaJpm || 4000) / 1000}* detik`)
+  const initialCount = Object.keys(allGroups).filter(id => !blacklistIds.includes(id)).length
+  const initialBlacklist = Object.keys(allGroups).filter(id => blacklistIds.includes(id)).length
+  await m.reply(`⏳ JPM ${jenis} dimulai!\n📨 Target: *${initialCount}* grup\n⛔ Blacklist: *${initialBlacklist}* grup\n⏱️ Jeda: *${(global.JedaJpm || 4000) / 1000}* detik`)
 
   while (true) {
     if (global.stopjpm) { delete global.stopjpm; break }
