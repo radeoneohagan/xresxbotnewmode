@@ -636,8 +636,11 @@ let user = [m.sender]
 if (m.isGroup && !m.key.fromMe && !isCreator && !isAdmins) {
   try {
     const _warnPath = './database/warndata.json'
-    // [AUDIT-FIX] cache mtime (read-only) — hindari parse tiap pesan grup
-    const _warnData = readHotJson(_warnPath, {})
+    // [FIX WARN] Baca FRESH tiap pesan (identik Fix14). readHotJson berbasis cache
+    // mtime bisa mengembalikan data BASI saat mtime tidak berubah terdeteksi
+    // (granularitas mtime kasar di filesystem container) -> warn tak pernah aktif.
+    let _warnData = {}
+    try { _warnData = JSON.parse(fs.readFileSync(_warnPath, 'utf8')) } catch { _warnData = {} }
 
     const _groupData = _warnData?.[from] || {}
 
@@ -1288,8 +1291,9 @@ if (!isCmd && hasContent && !m.key.fromMe && global.db?.users?.[m.sender]?.NXL !
 
 if (m.isGroup && !m.key.fromMe && !isAdmins && !isCreator && isBotAdmins) {
   try {
-    // [AUDIT-FIX] cache mtime (read-only) — hindari parse kedua tiap pesan grup
-    const _rawWarn = readHotJson('./database/warndata.json', {})
+    // [FIX WARN] Baca FRESH tiap pesan (identik Fix14) — hindari data basi dari cache mtime.
+    let _rawWarn = {}
+    try { _rawWarn = JSON.parse(fs.readFileSync('./database/warndata.json', 'utf8')) } catch { _rawWarn = {} }
     const warnData = Array.isArray(_rawWarn) ? {} : _rawWarn
     if ((warnData[from]?.[m.sender] || 0) > 0) {
       await NXL.sendMessage(from, { delete: m.key })
