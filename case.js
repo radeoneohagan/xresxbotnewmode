@@ -975,21 +975,18 @@ if (_msgId && !_isAppend) {
 // [PERF-FIX] Log pesan HANYA setelah dedup lolos — memastikan setiap pesan
 // hanya mencetak log SATU kali di panel Pterodactyl (fix double/triple log).
 if (m.message) {
-  // [LOG] Hanya cetak pesan yang benar-benar ada isinya (teks atau media).
-  // Pesan sistem/kosong dilewati agar tidak ada kolom kosong (spam) di console.
+  // [LOG RINGAN] 1 baris/pesan (info: waktu, tempat, pengirim, isi). Mengurangi
+  // volume stdout -> log lebih real-time & event-loop lebih ringan. Pesan
+  // sistem/kosong dilewati (tidak ada spam kolom kosong).
   let _isi = (budy && String(budy).trim()) ? String(budy).trim() : ''
   if (!_isi && m.mtype && m.mtype !== 'conversation' && m.mtype !== 'extendedTextMessage') {
     _isi = '[' + String(m.mtype).replace(/Message$/, '') + ']'
   }
   if (_isi) {
-    const _tempat = m.isGroup ? (groupName || 'Group Chat') : 'Private Chat'
-    console.log(
-      chalk.black(chalk.bgWhite('[ PESAN ]')),
-      chalk.black(chalk.bgGreen(new Date().toLocaleTimeString())),
-      chalk.black(chalk.bgBlue(' ' + _isi + ' ')),
-      '\n' + chalk.magenta('=> Dari'), chalk.green(pushname || 'Unknown'), chalk.yellow(m.sender || ''),
-      '\n' + chalk.blueBright('=> Di'), chalk.green(_tempat), chalk.cyan(from || '')
-    )
+    if (_isi.length > 300) _isi = _isi.slice(0, 300) + '…'
+    const _tempat = m.isGroup ? (groupName || 'Group') : 'Private'
+    const _jam = new Date().toLocaleTimeString('id-ID', { hour12: false })
+    console.log(`${chalk.green(`[${_jam}]`)} ${chalk.cyan(_tempat)} ${chalk.yellow((pushname || senderNumber) + ':')} ${_isi}`)
   }
 }
 

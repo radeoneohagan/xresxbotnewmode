@@ -917,6 +917,24 @@ setInterval(() => {
 	}
 }, ALL_GROUPS_CACHE_TTL)
 
+// [PERF] Trim in-memory store berkala agar RAM tidak membengkak (cegah GC pause
+// yang makin lama makin parah). Simpan hanya N pesan terbaru per chat — cukup untuk
+// retry-receipt & reply-quote pesan baru; pesan sangat lama dibuang dari memori.
+const STORE_MSG_LIMIT = 60
+setInterval(() => {
+	const st = global.store
+	if (!st || !st.messages) return
+	try {
+		for (const jid of Object.keys(st.messages)) {
+			const list = st.messages[jid]
+			if (list && Array.isArray(list.array) && list.array.length > STORE_MSG_LIMIT && typeof list.filter === 'function') {
+				const keep = new Set(list.array.slice(-STORE_MSG_LIMIT).map(mm => mm?.key?.id))
+				list.filter(mm => keep.has(mm?.key?.id))
+			}
+		}
+	} catch { /* abaikan — store bersifat best-effort */ }
+}, 5 * 60 * 1000)
+
 process.on('uncaughtException', (err) => {
 	console.error(chalk.red('[UNCAUGHT]'), err?.message || err)
 })
