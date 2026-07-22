@@ -144,12 +144,36 @@ async function prefetchAllGroups(conn) {
 }
 
 async function getGroupsCached(conn) {
-	// [FIX H6] Tambah TTL 10 menit agar cache tidak stale selamanya
+	// [STALE-WHILE-REVALIDATE] Jika cache ADA, langsung return (0ms).
+	// Jika cache expired → trigger background refresh, tapi TETAP return cache lama.
+	// JPM langsung mulai tanpa menunggu fetch selesai.
 	const CACHE_TTL = 10 * 60 * 1000
-	if (global.allGroupsCache && global.allGroupsCacheTime && (Date.now() - global.allGroupsCacheTime) < CACHE_TTL) {
+
+	const hasCache = global.allGroupsCache && Object.keys(global.allGroupsCache).length > 0
+	const isFresh = hasCache && global.allGroupsCacheTime && (Date.now() - global.allGroupsCacheTime) < CACHE_TTL
+
+	if (isFresh) {
+		// Cache masih fresh — return instan
 		return global.allGroupsCache
 	}
 
+	if (hasCache) {
+		// Cache ada tapi expired — return langsung, refresh di background
+		if (!global._groupCacheRefreshing) {
+			global._groupCacheRefreshing = true
+			conn.groupFetchAllParticipating()
+				.then(groups => {
+					global.allGroupsCache = groups
+					global.allGroupsCacheTime = Date.now()
+					console.log(`[CACHE] Grup di-refresh background: ${Object.keys(groups).length} grup`)
+				})
+				.catch(e => console.error('[CACHE] Background refresh gagal:', e?.message || e))
+				.finally(() => { global._groupCacheRefreshing = false })
+		}
+		return global.allGroupsCache
+	}
+
+	// Tidak ada cache sama sekali — harus fetch (pertama kali / setelah restart)
 	const groups = await Promise.race([
 		conn.groupFetchAllParticipating(),
 		new Promise((_, rej) => setTimeout(() => rej(new Error('groupFetchAllParticipating timeout')), 20000))
