@@ -1853,7 +1853,10 @@ case "menu": {
       if (typeof NXL.signalRepository?.lidMapping?.getPNForLID === 'function') {
         _resolved = await NXL.signalRepository.lidMapping.getPNForLID(menuChatJid)
       }
-      if (!_resolved && senderNumber) {
+      // [FIX] Jangan fallback ke senderNumber saat fromMe: untuk pesan dari nomor
+      // bot sendiri, senderNumber = nomor BOT (bukan lawan chat), sehingga menu
+      // salah terkirim ke room bot sendiri. Untuk fromMe, biarkan JID chat asli (X).
+      if (!_resolved && senderNumber && !m.key.fromMe) {
         _resolved = senderNumber + '@s.whatsapp.net'
       }
       if (_resolved) menuChatJid = _resolved
@@ -2125,22 +2128,14 @@ let listMessage = { title: 'List Menu', sections }
   ┆• .allmenu
   ┆• .ownermenu
   ┆• .nsfwmenu
-  ┆• .menuislami
   ┆• .listcase
-  ┆• .cekcase
   ╰◙
   ╭◙  *Info & Status*
   ┆• .ping
-  ┆• .speed
   ┆• .statusbot
-  ┆• .botstatus
-  ┆• .status
-  ┆• .sesi
   ┆• .jumlahuser
   ┆• .iduser
-  ┆• .cekiduser
   ┆• .idch
-  ┆• .cekidch
   ┆• .cekidgc
   ┆• .cekch
   ┆• .debugquoted
@@ -2148,9 +2143,8 @@ let listMessage = { title: 'List Menu', sections }
   ╰◙
   ╭◙  *AI Menu*
   ┆• .ai
-  ┆• .nxlai
   ┆• .gpt
-  ┆• .chatgpt
+  ┆• .nxlai
   ┆• .gemini
   ┆• .deepseek
   ┆• .imagine
@@ -2160,31 +2154,16 @@ let listMessage = { title: 'List Menu', sections }
   ╰◙
   ╭◙  *Downloader Menu*
   ┆• .tiktok
-  ┆• .tt
   ┆• .douyin
-  ┆• .dy
   ┆• .twitter
   ┆• .threads
-  ┆• .threadsdl
-  ┆• .instagram
-  ┆• .ig
   ┆• .igdl
-  ┆• .igdownload
-  ┆• .igimage
-  ┆• .igimg
-  ┆• .igvid
-  ┆• .igvideo
   ┆• .gdrive
   ┆• .gitclone
   ┆• .sfile
-  ┆• .xdl
-  ┆• .save
-  ┆• .pin
   ┆• .play
   ┆• .playch
-  ┆• .song
   ┆• .music
-  ┆• .musicgen
   ╰◙
   ╭◙  *Search & Stalk Menu*
   ┆• .yts
@@ -2193,9 +2172,7 @@ let listMessage = { title: 'List Menu', sections }
   ┆• .searchcode
   ┆• .pinterest
   ┆• .ttsearch
-  ┆• .tiktoksearch
   ┆• .igstalk
-  ┆• .tiktokstalk
   ┆• .ttstalk
   ┆• .ffstalk
   ┆• .stalkroblox
@@ -2203,58 +2180,35 @@ let listMessage = { title: 'List Menu', sections }
   ┆• .cekgempa
   ┆• .cekkalender
   ┆• .infolibur
-  ┆• .liburnasional
   ╰◙
   ╭◙  *Sticker & Media Tools*
-  ┆• .s
   ┆• .sticker
-  ┆• .sgif
+  ┆• .emojimix
   ┆• .brat
   ┆• .brat2
-  ┆• .bratfoto
-  ┆• .bratvid
-  ┆• .bratvideo
-  ┆• .emojimix
-  ┆• .mix
   ┆• .tourl
   ┆• .upscale
-  ┆• .perbesar
-  ┆• .enhancefoto
-  ┆• .enhancevideo
   ┆• .hdfoto
-  ┆• .hdgambar
   ┆• .hdvideo
   ┆• .blur
   ┆• .removebg
-  ┆• .nobg
   ┆• .readviewonce
-  ┆• .rvo
   ┆• .toaudio
-  ┆• .toaudio3
-  ┆• .tomp3
-  ┆• .stt
   ┆• .suarateks
   ┆• .ssweb
   ┆• .web2apk
-  ┆• .webtoapk
-  ┆• .apkbuilder
   ╰◙
   ╭◙  *Anime Menu*
   ┆• .anime
   ┆• .animesearch
   ┆• .animedetail
   ┆• .animebeauty
-  ┆• .animedance
-  ┆• .nimegami
   ┆• .neko
   ┆• .kitsune
   ┆• .catgirl
   ┆• .waifu
-  ┆• .waifucantik
   ┆• .quotesanime
   ┆• .sfw
-  ┆• .sfwrandom
-  ┆• .sfwwaifu
   ┆• .cuddle
   ┆• .hug
   ┆• .kiss
@@ -2266,11 +2220,9 @@ let listMessage = { title: 'List Menu', sections }
   ╭◙  *Fun Menu*
   ┆• .artinama
   ┆• .fitnah
-  ┆• .fakereply
   ┆• .buatcatatan
   ┆• .meme
   ┆• .faktadunia
-  ┆• .faktaunik
   ┆• .planet
   ┆• .pakustad
   ┆• .tafsirmimpi
@@ -2316,35 +2268,28 @@ let listMessage = { title: 'List Menu', sections }
   ╰◙
   ╭◙  *Islami Menu*
   ┆• .islami
-  ┆• .adzan
   ┆• .sholat
-  ┆• .jadwalsholat
   ╰◙
   ╭◙  *JPM Menu*
   ┆• .jpm
-  ┆• .jaser
-  ┆• .jasher
   ┆• .jpm2
   ┆• .jpm3
   ┆• .jpmtesti
   ┆• .jpmht
   ┆• .jpmch
   ┆• .jaserht
-  ┆• .jedajaser
   ┆• .jedajpm
   ┆• .setjeda
   ┆• .setjpm
   ┆• .autojpm
   ┆• .stopjpm
   ┆• .bljpm
-  ┆• .blacklistjpm
   ┆• .listbljpm
   ┆• .delbljpm
   ╰◙
   ╭◙  *SWGC / Status Grup*
   ┆• .swgc
   ┆• .swgroup
-  ┆• .swgrup
   ┆• .jpmswgc
   ┆• .autojpmswgc
   ┆• .setautoswgc
@@ -2355,10 +2300,6 @@ let listMessage = { title: 'List Menu', sections }
   ╰◙
   ╭◙  *Status WA Menu*
   ┆• .upsw
-  ┆• .upswgc
-  ┆• .uploadsw
-  ┆• .upstatus
-  ┆• .upstatuswa
   ┆• .sendstatus
   ╰◙
   ╭◙  *Auto & Kontak Menu*
@@ -2367,37 +2308,24 @@ let listMessage = { title: 'List Menu', sections }
   ┆• .addjoinfilter
   ┆• .deljoinfilter
   ┆• .listjoinfilter
-  ┆• .autosavekontak
   ┆• .savekontak
-  ┆• .savenomor
-  ┆• .svkontak
+  ┆• .autosavekontak
   ┆• .pushkontak
   ┆• .pushkontak2
-  ┆• .puskontak
-  ┆• .puskontak2
   ┆• .stoppush
-  ┆• .stoppus
-  ┆• .stoppushkontak
   ┆• .jedapush
   ╰◙
   ╭◙  *Group Menu*
   ┆• .creategc
-  ┆• .creategrup
   ┆• .joingc
   ┆• .leavegc
-  ┆• .listgc
-  ┆• .listgroup
   ┆• .listgrup
   ┆• .tagadmin
   ┆• .hidetag
-  ┆• .ht
   ┆• .kick
-  ┆• .kik
   ┆• .add
   ┆• .open
-  ┆• .opengc
   ┆• .close
-  ┆• .closegc
   ┆• .mute
   ┆• .mute-toggle
   ┆• .unmute
@@ -2425,28 +2353,15 @@ let listMessage = { title: 'List Menu', sections }
   ┆• .autopromo
   ┆• .setpromo
   ┆• .payment
-  ┆• .proses
-  ┆• .ps
-  ┆• .don
   ┆• .done
   ┆• .done1
-  ┆• .done2
-  ┆• .done3
-  ┆• .done4
-  ┆• .done5
-  ┆• .done6
-  ┆• .done7
-  ┆• .done8
-  ┆• .done9
-  ┆• .done10
   ╰◙
   ╭◙  *NSFW Menu*
   ┆• .nsfw
-  ┆• .nsfwlist
   ┆• .nsfwhentai
   ┆• .nsfwneko
-  ┆• .nsfwboobs
   ┆• .nsfwass
+  ┆• .nsfwboobs
   ┆• .nsfwpussy
   ┆• .nsfwecchi
   ┆• .nsfwbj
@@ -2456,22 +2371,16 @@ let listMessage = { title: 'List Menu', sections }
   ╰◙
   ╭◙  *Owner Menu*
   ┆• .owner
-  ┆• .own
   ┆• .addowner
-  ┆• .addown
   ┆• .delowner
-  ┆• .delown
   ┆• .listowner
-  ┆• .listown
   ┆• .public
   ┆• .self
   ┆• .restart
   ┆• .backup
-  ┆• .backupsc
-  ┆• .bck
   ┆• .afk
-  ┆• .caratt
-  ╰◙`,
+  ╰◙
+`,
 
             hasMediaAttachment: true,
             ...(global._menuMediaCache || (global._menuMediaCache = await prepareWAMessageMedia(
