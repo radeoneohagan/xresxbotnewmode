@@ -338,6 +338,11 @@ async function startingBot() {
 
 		browser: Browsers.ubuntu('Chrome'),
 		getMessage: async (key) => {
+			// [JPM ANTI-SPAM] Pesan broadcast JPM TIDAK boleh dikirim ulang saat
+			// retry-receipt (mis. pesan dihapus admin/bot di grup lain). Kembalikan
+			// undefined khusus untuk ID pesan JPM agar cukup 1x per grup (tidak spam).
+			// Pesan non-JPM tetap berperilaku normal seperti biasa.
+			if (key?.id && global._jpmMsgIds && global._jpmMsgIds.has(key.id)) return undefined
 			if (store) {
 				const msg = await store.loadMessage(key.remoteJid, key.id, undefined)
 				return msg?.message || undefined

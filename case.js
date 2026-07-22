@@ -3560,7 +3560,16 @@ case "jasher": case "jpm": case "jaser": {
 
     seenIds.add(groupId)
     try {
-      await NXL.sendMessage(groupId, global.messageJpm, { quoted: FakeChannel })
+      const _jpmSent = await NXL.sendMessage(groupId, global.messageJpm, { quoted: FakeChannel })
+      // [JPM ANTI-SPAM] Catat ID pesan JPM. Saat pesan ini dihapus admin/bot di
+      // grup lain, WhatsApp bisa mengirim retry-receipt yang membuat Baileys
+      // mengirim ULANG pesan yang sama (spam). Dengan menandai ID-nya, getMessage
+      // akan menolak resend -> JPM cukup 1x per grup lalu lanjut grup berikutnya.
+      if (_jpmSent?.key?.id) {
+        if (!global._jpmMsgIds) global._jpmMsgIds = new Set()
+        global._jpmMsgIds.add(_jpmSent.key.id)
+        if (global._jpmMsgIds.size > 5000) global._jpmMsgIds.clear()
+      }
       successCount++
     } catch (err) {
       console.error(`[JPM] Gagal kirim ke ${groupId}:`, err?.message || err)
