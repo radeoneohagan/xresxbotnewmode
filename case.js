@@ -680,7 +680,7 @@ return _c.sendMessage(from, { text : teks }, {quoted:m}).catch(err => {
   console.error('[REPLY ERROR]', from, err?.message || err)
 })
 }
-const qtext = {key: {remoteJid: "status@broadcast", participant: "0@s.whatsapp.net"}, message: {"extendedTextMessage": {"text": `Powered By ${ownername}`}}}
+const qtext = {key: {remoteJid: "status@broadcast", participant: "0@s.whatsapp.net"}, message: {"extendedTextMessage": {"text": `${global.ownername} ${global.versibot}`}}}
 const FakeChannel = {
   key: {
     remoteJid: 'status@broadcast',
@@ -690,7 +690,7 @@ const FakeChannel = {
   message: {
     newsletterAdminInviteMessage: {
       newsletterJid: '123@newsletter',
-      caption: `Powered By ${global.ownername}.`,
+      caption: `${global.ownername} ${global.versibot}`,
       inviteExpiration: 0
     }
   }
@@ -7204,16 +7204,20 @@ case "warn": {
     if (!jid) return null
     const rawNum = jid.replace(/@.*$/, '')
     if (participants && participants.length) {
-      if (jid.includes('@lid') || !jid.includes('@s.whatsapp.net')) {
-        const found = participants.find(p => {
-          const pLid = (p.lid || p.id || '').replace(/@.*$/, '')
-          return pLid === rawNum
-        })
-        if (found && found.jid) return found.jid.replace(/@.*$/, '') + '@s.whatsapp.net'
-        if (found && found.id && found.id.includes('@s.whatsapp.net')) return found.id
+      // [FIX WARN] Cocokkan target dengan SEMUA identifier participant (lid/id/jid)
+      // tanpa peduli suffix, lalu kembalikan JID kanonik (.jid = nomor asli).
+      // Ini WAJIB identik dengan resolusi pada blok auto-delete warn agar key
+      // penyimpanan == key pengecekan (sebelumnya angka LID tersimpan sebagai
+      // @s.whatsapp.net sehingga tidak pernah cocok saat enforcement).
+      const found = participants.find(p =>
+        (p.lid && p.lid.replace(/@.*$/, '') === rawNum) ||
+        (p.id  && p.id.replace(/@.*$/, '')  === rawNum) ||
+        (p.jid && p.jid.replace(/@.*$/, '') === rawNum)
+      )
+      if (found) {
+        if (found.jid) return found.jid.replace(/@.*$/, '') + '@s.whatsapp.net'
+        if (found.id && found.id.includes('@s.whatsapp.net')) return found.id
       }
-      const found = participants.find(p => (p.jid || p.id || '').replace(/@.*$/, '') === rawNum)
-      if (found) return (found.jid || found.id).replace(/@.*$/, '') + '@s.whatsapp.net'
     }
     return rawNum + '@s.whatsapp.net'
   }
@@ -7310,13 +7314,17 @@ case "resetwarn": {
     if (!jid) return null
     const rawNum = jid.replace(/@.*$/, '')
     if (participants && participants.length) {
-      if (jid.includes('@lid') || !jid.includes('@s.whatsapp.net')) {
-        const found = participants.find(p => (p.lid || p.id || '').replace(/@.*$/, '') === rawNum)
-        if (found && found.jid) return found.jid.replace(/@.*$/, '') + '@s.whatsapp.net'
-        if (found && found.id && found.id.includes('@s.whatsapp.net')) return found.id
+      // [FIX WARN] Resolusi identik toSWA agar target reset cocok dengan key
+      // yang tersimpan (JID kanonik / nomor asli participant).
+      const found = participants.find(p =>
+        (p.lid && p.lid.replace(/@.*$/, '') === rawNum) ||
+        (p.id  && p.id.replace(/@.*$/, '')  === rawNum) ||
+        (p.jid && p.jid.replace(/@.*$/, '') === rawNum)
+      )
+      if (found) {
+        if (found.jid) return found.jid.replace(/@.*$/, '') + '@s.whatsapp.net'
+        if (found.id && found.id.includes('@s.whatsapp.net')) return found.id
       }
-      const found = participants.find(p => (p.jid || p.id || '').replace(/@.*$/, '') === rawNum)
-      if (found) return (found.jid || found.id).replace(/@.*$/, '') + '@s.whatsapp.net'
     }
     return rawNum + '@s.whatsapp.net'
   }
