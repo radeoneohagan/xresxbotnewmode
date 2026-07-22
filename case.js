@@ -8418,23 +8418,6 @@ case 'waifucantik': {
 }
 break;
 
-case 'waifucantik':
-case 'animebeauty': {
-  try {
-
-    const r = await axios.post(`${global.apiNekosBest}/api/v2/waifu`, {});
-    const list = r.data?.files;
-    const u = list?.[Math.floor(Math.random() * list.length)];
-
-
-    if(u) await NXL.sendMessage(m.chat, { image: { url: u }, caption: '🎀 *Anime Beauty (Bypassed)*' }, { quoted: m });
-    else m.reply('❌ Gagal mengambil gambar');
-  } catch {
-    m.reply('❌ Terjadi kesalahan pada server');
-  }
-}
-break
-
 case "listcase":
 case "cekcase": {
   try {
@@ -9067,12 +9050,6 @@ case "musicgen": {
   } catch (e) {
     m.reply(`Gagal membuat musik:\n${e.message}`)
   }
-}
-break
-
-case "resetai": {
-  resetHistory(m.sender)
-  m.reply("Obrolan AI kamu sudah direset, mulai percakapan baru.")
 }
 break
 
