@@ -685,22 +685,6 @@ const FakeChannel = {
   key: {
     remoteJid: 'status@broadcast',
     fromMe: false,
-    id: 'Halo',
-    participant: '0@s.whatsapp.net'
-  },
-  message: {
-    contactMessage: {
-      displayName: `${global.ownername}`,
-      vcard: `BEGIN:VCARD\nVERSION:3.0\nN:${global.ownername}\nFN:${global.ownername}\nEND:VCARD`
-    }
-  }
-}
-
-// [FAKE CHANNEL JPM] Identik Fix14 mentah — newsletterAdminInviteMessage
-const FakeChannelJpm = {
-  key: {
-    remoteJid: 'status@broadcast',
-    fromMe: false,
     participant: '0@s.whatsapp.net'
   },
   message: {
@@ -3561,7 +3545,7 @@ case "jasher": case "jpm": case "jaser": {
 
     seenIds.add(groupId)
     try {
-      await NXL.sendMessage(groupId, global.messageJpm, { quoted: FakeChannelJpm })
+      await NXL.sendMessage(groupId, global.messageJpm, { quoted: FakeChannel })
       successCount++
     } catch (err) {
       console.error(`[JPM] Gagal kirim ke ${groupId}:`, err?.message || err)
@@ -3636,8 +3620,8 @@ case "jpmht": {
     sendOne: async (conn, groupId) => {
       const _localMsg = { ...global.messageJpm }
       _localMsg.mentions = (allGroups[groupId]?.participants || []).map(e => e.jid || e.id)
-      // preview via quoted FakeChannelJpm
-      await conn.sendMessage(groupId, _localMsg, { quoted: FakeChannelJpm })
+      // preview via quoted FakeChannel
+      await conn.sendMessage(groupId, _localMsg, { quoted: FakeChannel })
     },
     cleanup: () => { if (mediaPath && fs.existsSync(mediaPath)) fs.unlinkSync(mediaPath) }
   })
@@ -6331,7 +6315,7 @@ case 'autojpm': {
     stopFlag: 'stopjpm',
     targets: groupIdsJpm,
     delayMs: () => global.JedaJpm || 4000,
-    sendOne: async (conn, gid) => { await conn.sendMessage(gid, jpmC, { quoted: FakeChannelJpm }) }
+    sendOne: async (conn, gid) => { await conn.sendMessage(gid, jpmC, { quoted: FakeChannel }) }
   })
 
   if (_res.rejected) return m.reply(`⚠️ JPM sedang berjalan, tunggu sampai selesai atau hentikan dengan .stopjpm`)
@@ -6447,7 +6431,7 @@ case 'jaserht': {
       const htContent = jaserhtPath
         ? { image: fs.readFileSync(jaserhtPath), caption: text, mentions: members }
         : { text, mentions: members }
-      await conn.sendMessage(gid, htContent, { quoted: FakeChannelJpm })
+      await conn.sendMessage(gid, htContent, { quoted: FakeChannel })
     },
     cleanup: () => { if (jaserhtPath && fs.existsSync(jaserhtPath)) fs.unlinkSync(jaserhtPath) }
   })
@@ -7958,7 +7942,7 @@ case "jpm2": {
     stopFlag: 'stopjpm',
     targets: jpm2Filtered,
     delayMs: () => global.JedaJpm || 5000,
-    sendOne: async (conn, gid) => { await conn.sendMessage(gid, jpm2Content, { quoted: FakeChannelJpm }) },
+    sendOne: async (conn, gid) => { await conn.sendMessage(gid, jpm2Content, { quoted: FakeChannel }) },
     cleanup: () => { if (jpm2Media && fs.existsSync(jpm2Media)) fs.unlinkSync(jpm2Media) }
   })
 
@@ -8013,7 +7997,7 @@ case "jpmtesti": {
         image: fs.readFileSync(testiMedia),
         caption: text,
         contextInfo: { isForwarded: true, mentionedJid: [m.sender], businessMessageForwardInfo: { businessOwnerJid: botNumber } }
-      }, { quoted: FakeChannelJpm })
+      }, { quoted: FakeChannel })
     },
     cleanup: () => { if (fs.existsSync(testiMedia)) fs.unlinkSync(testiMedia) }
   })
