@@ -696,8 +696,7 @@ const FakeChannel = {
   }
 }
 
-// [FAKE CHANNEL JPM] Port dari Fix14 INCREMENTAL: menggunakan newsletterAdminInviteMessage
-// yang menghasilkan tampilan "WhatsApp Business ✓ • Status" + caption.
+// [FAKE CHANNEL JPM] Identik Fix14 mentah — newsletterAdminInviteMessage
 const FakeChannelJpm = {
   key: {
     remoteJid: 'status@broadcast',
@@ -706,7 +705,7 @@ const FakeChannelJpm = {
   },
   message: {
     newsletterAdminInviteMessage: {
-      newsletterJid: global.idsal || '123@newsletter',
+      newsletterJid: '123@newsletter',
       caption: `${global.ownername} ${global.versibot}`,
       inviteExpiration: 0
     }
