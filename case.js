@@ -3503,7 +3503,6 @@ break
 
 case "jasher": case "jpm": case "jaser": {
   if (!isCreator) return m.reply(mess.owner)
-  if (global.statusjpm) return m.reply(`⚠️ JPM sedang berjalan, tunggu sampai selesai atau hentikan dengan .stopjpm`)
   if (!text) return m.reply(`*Contoh :* ${command} pesannya & bisa dengan foto juga`)
   if (!global.botReady) return m.reply(`⏳ Bot baru saja reconnect, harap tunggu 20 detik lalu coba lagi.`)
 
@@ -3512,52 +3511,79 @@ case "jasher": case "jpm": case "jaser": {
     mediaPath = await NXL.downloadAndSaveMediaMessage(qmsg)
   }
 
-  // Ambil data grup dari cache (instant jika fresh, max 20s jika expired)
   let allGroups
   try {
     allGroups = await global.getGroupsCached()
   } catch (e) {
-    return m.reply(`❌ Gagal mengambil daftar grup: ${e.message}`)
+    return m.reply(`❌ Gagal mengambil daftar grup: ${e.message}\nBot mungkin belum siap, tunggu sebentar lalu coba lagi.`)
   }
-  const groupIds = Object.keys(allGroups)
 
   let blacklist = []
   try { blacklist = loadBlacklistJpm() } catch { blacklist = [] }
   const blacklistIds = blacklist.map(v => v.id)
-  const filteredGroupIds = groupIds.filter(id => !blacklistIds.includes(id))
-  const skipped = groupIds.length - filteredGroupIds.length
 
-  const senderChat = m.chat
-  const jenis = mediaPath ? "teks & foto" : "teks"
-  const jedaMs = global.JedaJpm || 4000
-  const jedaDetik = (jedaMs / 1000).toFixed(1)
-
-  await m.reply(`⏳ JPM ${jenis} dimulai!\n📨 Target: *${filteredGroupIds.length}* grup\n⏱️ Jeda: *${jedaDetik}* detik${skipped > 0 ? `\n⛔ Blacklist: *${skipped}* grup` : ''}`)
-
-  // Siapkan payload SEKALI (Fix14 pattern — Baileys cache link preview setelah send pertama)
+  // Payload murni — Baileys auto-generate link preview dari URL (identik Fix14)
   const messageContent = mediaPath
     ? { image: fs.readFileSync(mediaPath), caption: text }
     : { text }
 
-  const _res = await runBroadcast({
-    lockFlag: 'statusjpm',
-    stopFlag: 'stopjpm',
-    targets: filteredGroupIds,
-    delayMs: () => jedaMs + Math.floor(Math.random() * 3000),
-    sendOne: async (conn, groupId) => {
-      await conn.sendMessage(groupId, messageContent, { quoted: FakeChannelJpm })
-    },
-    cleanup: () => { if (mediaPath && fs.existsSync(mediaPath)) fs.unlinkSync(mediaPath) }
-  })
+  global.messageJpm = messageContent
+  global.statusjpm = true
 
-  if (_res.rejected) return m.reply(`⚠️ JPM sedang berjalan, tunggu sampai selesai atau hentikan dengan .stopjpm`)
+  const senderChat = m.chat
+  const jenis = mediaPath ? "teks & foto" : "teks"
+
+  // Fix14 pattern: while(true) loop yang membaca live cache
+  const seenIds = new Set()
+  let successCount = 0
+
+  const getNextId = () => {
+    const liveIds = Object.keys(global.allGroupsCache || {})
+    for (const id of liveIds) {
+      if (!seenIds.has(id) && !blacklistIds.includes(id)) return id
+    }
+    return null
+  }
+
+  const initialCount = Object.keys(allGroups).filter(id => !blacklistIds.includes(id)).length
+  await m.reply(`⏳ JPM ${jenis} dimulai!\n📨 Target: *${initialCount}* grup\n⏱️ Jeda: *${(global.JedaJpm || 4000) / 1000}* detik${global.allGroupsFetching ? ' (prefetch berjalan...)' : ''}`)
+
+  while (true) {
+    if (global.stopjpm) { delete global.stopjpm; break }
+
+    const groupId = getNextId()
+    if (!groupId) {
+      if (global.allGroupsFetching) {
+        await new Promise(r => setTimeout(r, 500))
+        continue
+      }
+      break
+    }
+
+    seenIds.add(groupId)
+    try {
+      await NXL.sendMessage(groupId, global.messageJpm, { quoted: FakeChannelJpm })
+      successCount++
+    } catch (err) {
+      console.error(`[JPM] Gagal kirim ke ${groupId}:`, err?.message || err)
+    }
+
+    const hasMore = getNextId() !== null || global.allGroupsFetching
+    if (hasMore) {
+      await new Promise(r => setTimeout(r, global.JedaJpm || 4000))
+    }
+  }
+
+  const skipped = Object.keys(global.allGroupsCache || {}).filter(id => blacklistIds.includes(id)).length
+  if (mediaPath && fs.existsSync(mediaPath)) fs.unlinkSync(mediaPath)
+  delete global.statusjpm
 
   if (global.pendingGroupsRefresh && global._nxlConn) {
     global.pendingGroupsRefresh = false
     global.prefetchAllGroups().catch(() => {})
   }
   await NXL.sendMessage(senderChat, {
-    text: `✅ JPM ${jenis} selesai!\nTerkirim ke *${_res.sukses}/${filteredGroupIds.length}* grup.\n${skipped > 0 ? `⛔ Di-skip blacklist: *${skipped}* grup` : ''}`
+    text: `✅ JPM ${jenis} selesai!\nTerkirim ke *${successCount}/${seenIds.size}* grup.\n${skipped > 0 ? `⛔ Di-skip blacklist: *${skipped}* grup` : ''}`
   }, { quoted: m })
 }
 break
