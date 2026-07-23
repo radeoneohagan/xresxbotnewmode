@@ -5123,16 +5123,15 @@ case 'caratt': {
     }
 
 
-    const _kwLower = text.toLowerCase().trim()
-    const _kwWords = _kwLower.split(/\s+/).filter(w => w.length > 0)
-    const _filtered = items.filter(v => {
-      const haystack = ((v.title || v.desc || '') + ' ' + (v.author?.unique_id || '')).toLowerCase()
-      return _kwWords.some(w => haystack.includes(w))
-    })
-
-    const _pool = _filtered.length > 0 ? _filtered : items
-
-    const results = _pool.sort((a, b) => (b.play_count || 0) - (a.play_count || 0)).slice(0, 5)
+    // [FIX ttsearch] TIDAK lagi memfilter lokal berdasarkan caption/hashtag/username.
+    // Pencarian dipercayakan sepenuhnya ke TikTok (TikWM sort_type=1 = "Banyak
+    // disukai"/viral, sudah memperhitungkan hashtag & relevansi). Hasil hanya
+    // diurutkan by play_count agar VIEW TERBANYAK tampil dulu -> mendekati
+    // Top/Trending/FYP, bukan hasil filter lokal.
+    const results = items
+      .slice()
+      .sort((a, b) => (b.play_count || 0) - (a.play_count || 0))
+      .slice(0, 5)
 
     await m.reply(`✅ Ditemukan ${items.length} video, mengunduh ${results.length} teratas...`)
 
