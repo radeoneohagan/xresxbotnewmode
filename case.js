@@ -6945,38 +6945,21 @@ case "autopromo": {
       if (!global._connAlive) break
       try {
         if (p.gambar) {
+          // Kirim polos tanpa kartu externalAdReply (preview link dari URL di caption)
           await _conn.sendMessage(id, {
             image: Buffer.from(p.gambar, "base64"),
-            caption: teks,
-            contextInfo: {
-            externalAdReply: {
-              showAdAttribution: true,
-              title: "WhatsApp Business",
-              body: "XRESX DIGITAL STORE 2.0",
-              sourceUrl: `${global.waMe}/6287728163189`,
-              mediaType: 1,
-              renderLargerThumbnail: false
-            }
-          }
-            })
+            caption: teks
+          })
         } else {
+          // Teks polos -> Baileys auto-generate preview link thumbnail (identik JPM utama)
           await _conn.sendMessage(id, {
-            text: teks,
-            contextInfo: {
-            externalAdReply: {
-              showAdAttribution: true,
-              title: "WhatsApp Business",
-              body: "XRESX DIGITAL STORE 2.0",
-              sourceUrl: `${global.waMe}/6287728163189`,
-              mediaType: 1,
-              renderLargerThumbnail: false
-            }
-          }
-            })
+            text: teks
+          })
         }
       } catch {
       }
-      await sleep(3000)
+      // [GANTI] Jeda ikut global setjeda JPM (settings.js / .jedajpm), bukan hardcode 3 dtk
+      await sleep(global.JedaJpm || 4000)
     }
     } finally {
       // [PATCH A] Selalu lepas guard overlap, apa pun yang terjadi.
