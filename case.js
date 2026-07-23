@@ -5108,8 +5108,11 @@ case 'caratt': {
   await NXL.sendMessage(m.chat, { react: { text: '⏳', key: m.key } })
 
   try {
+    // [FIX ttsearch] sort_type=1 => "Banyak disukai" (Most Liked / paling viral),
+    // bukan default relevansi. publish_time=0 => semua waktu. Ini menyamai tab
+    // "Teratas/Banyak disukai" di app TikTok, lalu di-refine lokal by play_count.
     const res = await axios.get(
-      `${global.apiTikwm}/api/feed/search?keywords=${encodeURIComponent(text)}&count=30&cursor=0&hd=1`,
+      `${global.apiTikwm}/api/feed/search?keywords=${encodeURIComponent(text)}&count=30&cursor=0&hd=1&sort_type=1&publish_time=0`,
       { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 20000 }
     )
 
