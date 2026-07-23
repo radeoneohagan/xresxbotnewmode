@@ -1287,18 +1287,8 @@ if (!isCmd && hasContent && !m.key.fromMe && global.db?.users?.[m.sender]?.NXL !
   return
 }
 
-if (m.isGroup && !m.key.fromMe && !isAdmins && !isCreator && isBotAdmins) {
-  try {
-    // [FIX WARN] Baca FRESH tiap pesan (identik Fix14) — hindari data basi dari cache mtime.
-    let _rawWarn = {}
-    try { _rawWarn = JSON.parse(fs.readFileSync('./database/warndata.json', 'utf8')) } catch { _rawWarn = {} }
-    const warnData = Array.isArray(_rawWarn) ? {} : _rawWarn
-    if ((warnData[from]?.[m.sender] || 0) > 0) {
-      await NXL.sendMessage(from, { delete: m.key })
-      return
-    }
-  } catch {}
-}
+// [CLEANUP] Blok enforcement warn ke-2 dihapus: redundan dgn Block 1 di atas
+// (kondisinya subset & Block 1 selalu jalan lebih dulu + resolusi JID lebih benar).
 
 if (m.isGroup && !m.key.fromMe && !isAdmins && !isCreator) {
   try {
@@ -3454,7 +3444,7 @@ const cards = rawSlides.map((slideText) => ({
   const groupIds = Object.keys(allGroups)
   let blacklist = []
   try { blacklist = loadBlacklistJpm() } catch { blacklist = [] }
-  const blacklistIds = blacklist.map(v => v.id)
+  const blacklistIds = blacklist.map(v => v.id || v)
   const filteredGroupIds = groupIds.filter(id => !blacklistIds.includes(id))
   const skipped = groupIds.length - filteredGroupIds.length
   if (filteredGroupIds.length < 1) return m.reply(`❌ Tidak ada grup target.`)
@@ -3513,7 +3503,7 @@ case "jasher": case "jpm": case "jaser": {
 
   let blacklist = []
   try { blacklist = loadBlacklistJpm() } catch { blacklist = [] }
-  const blacklistIds = blacklist.map(v => v.id)
+  const blacklistIds = blacklist.map(v => v.id || v)
 
   // Payload murni — Baileys auto-generate link preview dari URL (identik Fix14)
   const messageContent = mediaPath
@@ -3611,7 +3601,7 @@ case "jpmht": {
     blacklist = []
   }
 
-  const blacklistIds = blacklist.map(v => v.id)
+  const blacklistIds = blacklist.map(v => v.id || v)
   const filteredGroupIds = groupIds.filter(id => !blacklistIds.includes(id))
   const skipped = groupIds.length - filteredGroupIds.length
 
@@ -7310,7 +7300,7 @@ case "warnlist": {
 
   let warnPath = './database/warndata.json'
   let warnData = {}
-  try { warnData = JSON.parse(fs.readFileSync(warnPath, 'utf8')) } catch { warnData = {} }
+  try { const _r = JSON.parse(fs.readFileSync(warnPath, 'utf8')); warnData = Array.isArray(_r) ? {} : _r } catch { warnData = {} }
 
   const groupWarn = warnData[from] || {}
   const entries = Object.entries(groupWarn).filter(([, v]) => v > 0)
@@ -7368,7 +7358,7 @@ case "resetwarn": {
 
   let warnPath = './database/warndata.json'
   let warnData = {}
-  try { warnData = JSON.parse(fs.readFileSync(warnPath, 'utf8')) } catch { warnData = {} }
+  try { const _r = JSON.parse(fs.readFileSync(warnPath, 'utf8')); warnData = Array.isArray(_r) ? {} : _r } catch { warnData = {} }
 
   const _groupWarn = warnData[from] || {}
   const targetNum = warnTarget.split('@')[0]
