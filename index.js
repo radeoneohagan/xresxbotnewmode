@@ -350,6 +350,9 @@ async function startingBot() {
 			return { conversation: 'hallo' }
 		},
 		printQRInTerminal: !pairingCode,
+		// [ANTI-BAN] Jangan tandai online terus-menerus (kurangi jejak bot 24 jam,
+		// mengurangi trafik presence). Tidak memengaruhi kecepatan balas command.
+		markOnlineOnConnect: false,
 		generateHighQualityLinkPreview: true,
 		logger: pino({ level: 'silent' }),
 		auth: {
@@ -409,6 +412,13 @@ NXL.ev.on('connection.update', async (update) => {
 				console.log(chalk.red('[LOGOUT] Sesi habis. Hapus folder session/ dan scan ulang.'))
 				exec('rm -rf ./session/*')
 				process.exit(1)
+			} else if (reason === 403) {
+				// [ANTI-BAN] 403 Forbidden = koneksi ditolak WhatsApp; akun kemungkinan
+				// dibatasi/diblokir. JANGAN reconnect: retry beruntun hanya menghantam
+				// server WA & memperparah pembatasan. Hentikan total, jangan hapus sesi.
+				console.log(chalk.red('[FORBIDDEN 403] Koneksi ditolak WhatsApp — akun kemungkinan dibatasi/diblokir.'))
+				console.log(chalk.yellow('[ANTI-BAN] Reconnect DIHENTIKAN agar tidak memperparah. Periksa status akun (mungkin perlu "Minta tinjauan"). Restart bot manual setelah akun pulih.'))
+				global._connAlive = false
 			} else if (reason === DisconnectReason.Multidevicemismatch) {
 				console.log(chalk.red('[MISMATCH] Multi-device mismatch. Hapus session dan scan ulang.'))
 				exec('rm -rf ./session/*')

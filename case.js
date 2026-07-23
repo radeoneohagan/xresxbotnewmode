@@ -984,9 +984,14 @@ if (m.message) {
   }
   if (_isi) {
     if (_isi.length > 300) _isi = _isi.slice(0, 300) + '…'
-    const _tempat = m.isGroup ? (groupName || 'Group') : 'Private'
     const _jam = new Date().toLocaleTimeString('id-ID', { hour12: false })
-    console.log(`${chalk.green(`[${_jam}]`)} ${chalk.cyan(_tempat)} ${chalk.yellow((pushname || senderNumber) + ':')} ${_isi}`)
+    if (m.isGroup) {
+      // Tampilkan NAMA GRUP dengan jelas (dari cache, tanpa fetch tambahan → tetap cepat)
+      const _gn = groupName || global.allGroupsCache?.[from]?.subject || global.groupCache?.[from]?.subject || from.split('@')[0]
+      console.log(`${chalk.green(`[${_jam}]`)} ${chalk.magenta('GRUP:')} ${chalk.cyan(_gn)} ${chalk.yellow('» ' + (pushname || senderNumber) + ':')} ${_isi}`)
+    } else {
+      console.log(`${chalk.green(`[${_jam}]`)} ${chalk.blue('PRIVATE')} ${chalk.yellow((pushname || senderNumber) + ':')} ${_isi}`)
+    }
   }
 }
 
