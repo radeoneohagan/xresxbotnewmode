@@ -347,7 +347,11 @@ async function startingBot() {
 				const msg = await store.loadMessage(key.remoteJid, key.id, undefined)
 				return msg?.message || undefined
 			}
-			return { conversation: 'hallo' }
+			// [ANTI-BAN] JANGAN kembalikan pesan dummy ('hallo'). Pada retry-receipt,
+			// Baileys akan MENGIRIM balik nilai ini ke perangkat penerima. Mengembalikan
+			// 'hallo' = bot mengirim pesan "hallo" tak diminta ke banyak orang (pola spam
+			// -> memicu ban). Kembalikan undefined agar tidak ada pengiriman ulang liar.
+			return undefined
 		},
 		printQRInTerminal: !pairingCode,
 		// [ANTI-BAN] Jangan tandai online terus-menerus (kurangi jejak bot 24 jam,
