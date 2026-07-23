@@ -4858,6 +4858,8 @@ case 'song': {
   if (!text) return m.reply(`*PENGGUNAAN SALAH*\n\nFormat: .${command} [judul_lagu]\nContoh: .${command} Night Changes`)
 
   try {
+    // [REACT] Tanda proses dimulai (loading) agar tidak terkesan diam/bengong
+    await NXL.sendMessage(m.chat, { react: { text: '⏳', key: m.key } })
     // Pencarian via @vreden/youtube_scraper (search) + yt-search (fallback)
     let video = null
     try {
@@ -4874,7 +4876,7 @@ case 'song': {
       if (found) video = { title: found.title, url: found.url, thumbnail: found.thumbnail, duration: found.seconds }
     }
 
-    if (!video) return m.reply('❌ Hasil pencarian kosong atau lagu tidak ditemukan')
+    if (!video) { await NXL.sendMessage(m.chat, { react: { text: '❌', key: m.key } }); return m.reply('❌ Hasil pencarian kosong atau lagu tidak ditemukan') }
 
     const videoUrl = video.url || video.videoUrl || `https://www.youtube.com/watch?v=${video.videoId || video.id}`
     const title = video.title || 'Unknown'
@@ -4914,7 +4916,7 @@ case 'song': {
       } catch {}
     }
 
-    if (!audioUrl) return m.reply('❌ Gagal mendapatkan link download audio. Coba lagi nanti.')
+    if (!audioUrl) { await NXL.sendMessage(m.chat, { react: { text: '❌', key: m.key } }); return m.reply('❌ Gagal mendapatkan link download audio. Coba lagi nanti.') }
 
     await NXL.sendMessage(m.chat, {
       audio: { url: audioUrl },
@@ -4922,8 +4924,12 @@ case 'song': {
       ptt: false
     }, { quoted: m })
 
+    // [REACT] Tanda selesai (done)
+    await NXL.sendMessage(m.chat, { react: { text: '✅', key: m.key } })
+
   } catch (e) {
     console.error('[PLAY ERROR]', e.message)
+    await NXL.sendMessage(m.chat, { react: { text: '❌', key: m.key } })
     m.reply('[ ERROR SYSTEM ] Gagal memproses data musik, silakan coba beberapa saat lagi')
   }
 }
@@ -8636,6 +8642,7 @@ case 'done6': case 'done7': case 'done8': case 'done9': case 'done10': {
       `│ *Paket:* ${namaPaket}\n` +
       `│ *Harga:* ${formatRupiah(harga)}\n` +
       `│ *Tanggal:* ${tanggalNow}\n` +
+      `│ *Berlaku Sampai:* ${tanggalBerlaku}\n` +
       `└─────────────────────\n\n` +
       `Terima kasih telah berbelanja di *${global.ownername}* ✓\n` +
       `_Layanan VPN Premium Terpercaya_`
@@ -8697,6 +8704,7 @@ case 'done6': case 'done7': case 'done8': case 'done9': case 'done10': {
         `• Server: ${serverCode === 'SG' ? 'Singapore' : 'Indonesia'}\n` +
         `• Durasi: ${durasi} Hari\n` +
         `• Perangkat: ${jumlahPerangkat} IP\n` +
+        `• Tanggal: ${tanggalNow}\n` +
         `• Berlaku Sampai: ${tanggalBerlaku}\n\n` +
         `Terima kasih telah berbelanja di *${global.ownername}* 🙏\n` +
         `Jika ada kendala, silakan hubungi admin.` +
